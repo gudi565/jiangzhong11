@@ -1,4 +1,4 @@
-"""降重 web service — FastAPI over engine.py + docx I/O + quota/redemption."""
+"""降重 web service — FastAPI over engine.py + docx I/O + time-based quota."""
 import traceback
 from pathlib import Path
 
@@ -36,7 +36,7 @@ class RedeemReq(BaseModel):
 class GenReq(BaseModel):
     secret: str
     n: int = 1
-    chars: int = 5000
+    seconds: int = 3600   # 一个兑换码 = 多少秒使用时间（默认 1 小时）
 
 
 app = FastAPI(title="jiangzhong")
@@ -45,8 +45,7 @@ app.mount("/assets", StaticFiles(directory=BASE_DIR), name="assets")
 
 @app.middleware("http")
 async def cid_middleware(request: Request, call_next):
-    """Identify each client by X-Client-Id header (non-browser clients, e.g.
-    the WeChat mini program, which doesn't carry cookies) or the jz_cid cookie."""
+    """Identify each client by X-Client-Id header (non-browser) or jz_cid cookie."""
     cid = (request.headers.get("x-client-id") or request.cookies.get("jz_cid")
            or quota.new_client_id())
     request.state.cid = cid
@@ -79,7 +78,7 @@ def health():
         "key_configured": bool(engine.KEY),
         "max_chars": MAX_CHARS,
         "file_max_chars": FILE_MAX_CHARS,
-        "free_quota": quota.FREE_QUOTA,
+        "free_trial_seconds": quota.FREE_TRIAL_SECONDS,
         "admin_secret_default": quota.ADMIN_SECRET == "dev-secret-change-me",
     }
 
@@ -100,11 +99,12 @@ def redeem(req: RedeemReq, request: Request):
 def admin_gen_codes(req: GenReq):
     if req.secret != quota.ADMIN_SECRET:
         return JSONResponse({"error": "secret 错误"}, status_code=403)
-    if not (1 <= req.n <= 10000) or not (1 <= req.chars <= 10_000_000):
-        return JSONResponse({"error": "n 或 chars 超出范围"}, status_code=400)
-    codes = quota.gen_codes(req.n, req.chars)
-    return {"codes": codes, "chars_each": req.chars, "count": len(codes),
-            "note": "把这些码作为卡密导入独角数卡(dujiaoka)即可售卖"}
+    if not (1 <= req.n <= 10000) or not (60 <= req.seconds <= 31_536_000):
+        return JSONResponse({"error": "n 或 seconds 超出范围"}, status_code=400)
+    codes = quota.gen_codes(req.n, req.seconds)
+    mins = req.seconds // 60
+    return {"codes": codes, "seconds_each": req.seconds, "minutes_each": mins, "count": len(codes),
+            "note": f"每个码可用 {mins} 分钟。码作为卡密在淘宝售卖，买家粘贴后即激活"}
 
 
 @app.post("/api/rewrite")
@@ -120,18 +120,17 @@ def rewrite(req: RewriteReq, request: Request):
     if err:
         return JSONResponse({"error": err}, status_code=400)
 
-    need = len(text)
-    ok, remaining = quota.check(request.state.cid, need)
-    if not ok:
+    active, _ = quota.is_active(request.state.cid)
+    if not active:
         return JSONResponse(
-            {"error": f"字数不足：本次需要 {need} 字，剩余 {remaining} 字。请输入兑换码或购买。",
-             "quota": {"remaining": remaining, "needed": need}},
+            {"error": "未激活或已到期，请输入兑换码（淘宝购买）。",
+             "quota": quota.get_state_summary(request.state.cid)},
             status_code=402,
         )
     try:
         data = (engine.rewrite_simple(text, req.strength, req.discipline) if req.mode == "simple"
                 else engine.rewrite_pipeline(text, req.strength, req.discipline))
-        data["quota"] = {"remaining": quota.deduct(request.state.cid, need)}
+        data["quota"] = quota.get_state_summary(request.state.cid)
         return data
     except Exception as e:
         traceback.print_exc()
@@ -165,19 +164,18 @@ async def rewrite_file(
     if len(text) > FILE_MAX_CHARS:
         return JSONResponse({"error": f"文档文本过长（{len(text)} > {FILE_MAX_CHARS} 字），请精简或分段"}, status_code=413)
 
-    need = len(text)
-    ok, remaining = quota.check(request.state.cid, need)
-    if not ok:
+    active, _ = quota.is_active(request.state.cid)
+    if not active:
         return JSONResponse(
-            {"error": f"字数不足：本次需要 {need} 字，剩余 {remaining} 字。请输入兑换码或购买。",
-             "quota": {"remaining": remaining, "needed": need}},
+            {"error": "未激活或已到期，请输入兑换码（淘宝购买）。",
+             "quota": quota.get_state_summary(request.state.cid)},
             status_code=402,
         )
     try:
         data = (engine.rewrite_simple(text, strength, discipline) if mode == "simple"
                 else engine.rewrite_pipeline(text, strength, discipline))
         data["orig_text"] = text
-        data["quota"] = {"remaining": quota.deduct(request.state.cid, need)}
+        data["quota"] = quota.get_state_summary(request.state.cid)
         return data
     except Exception as e:
         traceback.print_exc()

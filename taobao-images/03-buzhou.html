@@ -1,0 +1,160 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>降重君 · 4 步搞定</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body {
+    width: 800px; height: 800px;
+    font-family: -apple-system, "PingFang SC", "Helvetica Neue", sans-serif;
+    overflow: hidden;
+  }
+  body {
+    position: relative;
+    background:
+      radial-gradient(circle at 90% 10%, rgba(37, 99, 235, 0.10) 0%, transparent 45%),
+      radial-gradient(circle at 10% 95%, rgba(245, 158, 11, 0.10) 0%, transparent 45%),
+      linear-gradient(180deg, #f8fafc 0%, #eef2f9 100%);
+    color: #0f172a;
+  }
+  /* 顶部 */
+  .header {
+    text-align: center;
+    padding-top: 50px;
+  }
+  .h-tag {
+    display: inline-block;
+    padding: 8px 20px;
+    background: #dbeafe;
+    color: #1a56db;
+    font-size: 22px; font-weight: 700;
+    border-radius: 20px;
+    margin-bottom: 16px;
+    letter-spacing: 2px;
+  }
+  .h-title {
+    font-size: 66px; font-weight: 900; color: #0a1f5c;
+    letter-spacing: 4px;
+  }
+  .h-title .accent { color: #1a56db; }
+  .h-sub { margin-top: 10px; font-size: 24px; color: #475569; font-weight: 500; }
+
+  /* 步骤网格 2x2 */
+  .grid {
+    margin: 46px 50px 0;
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 26px;
+  }
+  .step {
+    position: relative;
+    background: #fff;
+    border-radius: 22px;
+    padding: 28px 26px 26px;
+    box-shadow: 0 12px 28px rgba(15, 23, 42, 0.08);
+    border: 2px solid #e2e8f0;
+    min-height: 200px;
+  }
+  .step-num {
+    position: absolute;
+    top: -22px; left: 24px;
+    width: 56px; height: 56px;
+    border-radius: 16px;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 28px; font-weight: 900; color: #fff;
+    box-shadow: 0 8px 18px rgba(0,0,0,0.15);
+  }
+  .s1 .step-num { background: linear-gradient(135deg, #1a56db, #2563eb); }
+  .s2 .step-num { background: linear-gradient(135deg, #6366f1, #8b5cf6); }
+  .s3 .step-num { background: linear-gradient(135deg, #0891b2, #06b6d4); }
+  .s4 .step-num { background: linear-gradient(135deg, #f59e0b, #f97316); }
+
+  .step-emoji {
+    position: absolute;
+    top: 22px; right: 22px;
+    font-size: 44px;
+    opacity: 0.95;
+  }
+  .step-title {
+    margin-top: 36px;
+    font-size: 30px; font-weight: 800; color: #0a1f5c;
+    letter-spacing: 1px;
+  }
+  .step-desc {
+    margin-top: 10px;
+    font-size: 18px; line-height: 1.55;
+    color: #64748b; font-weight: 500;
+  }
+  .step-desc .b { color: #1a56db; font-weight: 700; }
+
+  /* 步骤间连接箭头(简化版,不画绝对位置) */
+  .arrow-hint {
+    position: absolute;
+    bottom: 14px; right: 18px;
+    font-size: 22px;
+    color: #cbd5e1;
+  }
+
+  /* 底部条 */
+  .footer-bar {
+    position: absolute;
+    left: 50px; right: 50px; bottom: 38px;
+    padding: 18px 26px;
+    background: linear-gradient(135deg, #1a56db, #2563eb);
+    border-radius: 16px;
+    color: #fff;
+    text-align: center;
+    box-shadow: 0 12px 26px rgba(26, 86, 219, 0.3);
+  }
+  .footer-bar .big { font-size: 26px; font-weight: 800; letter-spacing: 2px; }
+  .footer-bar .small { font-size: 16px; opacity: 0.92; margin-top: 2px; }
+</style>
+</head>
+<body>
+  <div class="header">
+    <div class="h-tag">操作简单 · 几分钟上手</div>
+    <div class="h-title">4 步<span class="accent">搞定</span></div>
+    <div class="h-sub">拍下到使用 · 全流程一条龙</div>
+  </div>
+
+  <div class="grid">
+    <div class="step s1">
+      <div class="step-num">①</div>
+      <div class="step-emoji">💳</div>
+      <div class="step-title">拍下付款</div>
+      <div class="step-desc">选择套餐<span class="b">下单支付</span>,支付宝 / 微信均可</div>
+      <div class="arrow-hint">→</div>
+    </div>
+
+    <div class="step s2">
+      <div class="step-num">②</div>
+      <div class="step-emoji">🔔</div>
+      <div class="step-title">收卡密</div>
+      <div class="step-desc">系统<span class="b">旺旺秒发卡密</span>,自动发货无需等待</div>
+      <div class="arrow-hint">→</div>
+    </div>
+
+    <div class="step s3">
+      <div class="step-num">③</div>
+      <div class="step-emoji">🔗</div>
+      <div class="step-title">网页兑换</div>
+      <div class="step-desc">打开网页<span class="b">粘贴卡密</span>登录,即刻激活时长</div>
+      <div class="arrow-hint">→</div>
+    </div>
+
+    <div class="step s4">
+      <div class="step-num">④</div>
+      <div class="step-emoji">📄</div>
+      <div class="step-title">一键降重</div>
+      <div class="step-desc">上传 Word 文档,<span class="b">AI 一键改写</span>降低查重率</div>
+      <div class="arrow-hint">✓</div>
+    </div>
+  </div>
+
+  <div class="footer-bar">
+    <div class="big">⚡ 自动发货 · 卡密即发</div>
+    <div class="small">拍下立刻收到 · 不用等客服</div>
+  </div>
+</body>
+</html>

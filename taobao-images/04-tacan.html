@@ -1,0 +1,209 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>降重君 · 超值套餐</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body {
+    width: 800px; height: 800px;
+    font-family: -apple-system, "PingFang SC", "Helvetica Neue", sans-serif;
+    overflow: hidden;
+  }
+  body {
+    position: relative;
+    background:
+      radial-gradient(circle at 50% 0%, #dbeafe 0%, transparent 50%),
+      linear-gradient(180deg, #f8fafc 0%, #eef2f9 100%);
+    color: #0f172a;
+  }
+  /* 顶部 */
+  .header {
+    text-align: center;
+    padding-top: 48px;
+  }
+  .h-tag {
+    display: inline-block;
+    padding: 8px 20px;
+    background: #fef3c7;
+    color: #b45309;
+    font-size: 22px; font-weight: 700;
+    border-radius: 20px;
+    margin-bottom: 16px;
+    letter-spacing: 2px;
+  }
+  .h-title {
+    font-size: 66px; font-weight: 900; color: #0a1f5c;
+    letter-spacing: 4px;
+  }
+  .h-title .accent {
+    background: linear-gradient(180deg, #f59e0b, #f97316);
+    -webkit-background-clip: text; background-clip: text;
+    -webkit-text-fill-color: transparent;
+  }
+  .h-sub { margin-top: 10px; font-size: 24px; color: #475569; font-weight: 500; }
+
+  /* 套餐网格 */
+  .grid {
+    margin: 50px 40px 0;
+    display: grid;
+    grid-template-columns: 1fr 1.15fr 1fr;
+    gap: 20px;
+    align-items: stretch;
+  }
+  .plan {
+    position: relative;
+    background: #fff;
+    border-radius: 22px;
+    padding: 30px 22px 26px;
+    box-shadow: 0 12px 28px rgba(15, 23, 42, 0.08);
+    border: 2px solid #e2e8f0;
+    text-align: center;
+  }
+  .plan-hot {
+    background: linear-gradient(180deg, #1e3a8a 0%, #1a56db 100%);
+    border: 3px solid #f59e0b;
+    color: #fff;
+    transform: translateY(-14px);
+    box-shadow: 0 20px 40px rgba(26, 86, 219, 0.35);
+    padding-top: 38px;
+    padding-bottom: 38px;
+  }
+  /* 推荐角标 */
+  .ribbon {
+    position: absolute;
+    top: -16px; left: 50%;
+    transform: translateX(-50%);
+    padding: 6px 22px;
+    background: linear-gradient(90deg, #f59e0b, #f97316);
+    color: #fff;
+    font-size: 20px; font-weight: 800;
+    border-radius: 14px;
+    letter-spacing: 2px;
+    box-shadow: 0 6px 14px rgba(249, 115, 22, 0.4);
+    white-space: nowrap;
+  }
+  .plan-hot .ribbon { background: linear-gradient(90deg, #fbbf24, #f97316); }
+
+  .plan-name {
+    font-size: 28px; font-weight: 800; color: #0a1f5c;
+    letter-spacing: 2px;
+  }
+  .plan-hot .plan-name { color: #fde68a; }
+
+  .plan-price {
+    margin-top: 14px;
+    display: flex; align-items: baseline; justify-content: center;
+    gap: 2px;
+  }
+  .cur { font-size: 26px; font-weight: 700; color: #ef4444; }
+  .int { font-size: 64px; font-weight: 900; color: #ef4444; line-height: 1; }
+  .plan-hot .cur, .plan-hot .int { color: #fff; }
+
+  .plan-unit {
+    margin-top: 8px;
+    font-size: 16px; color: #94a3b8; font-weight: 600;
+  }
+  .plan-hot .plan-unit { color: rgba(255,255,255,0.85); }
+
+  .divider {
+    height: 1px; margin: 20px 8px;
+    background: #e2e8f0;
+  }
+  .plan-hot .divider { background: rgba(255,255,255,0.25); }
+
+  .feat-list {
+    text-align: left;
+    margin-top: 4px;
+  }
+  .feat-item {
+    display: flex; align-items: center; gap: 8px;
+    font-size: 18px; line-height: 1.5;
+    color: #334155; font-weight: 600;
+    padding: 6px 0;
+  }
+  .feat-item .ico { font-size: 18px; color: #10b981; font-weight: 900; }
+  .plan-hot .feat-item { color: rgba(255,255,255,0.95); }
+  .plan-hot .feat-item .ico { color: #fde68a; }
+  .feat-item .hl { color: #1a56db; font-weight: 800; }
+  .plan-hot .feat-item .hl { color: #fde68a; }
+
+  /* 底部条 */
+  .footer-bar {
+    position: absolute;
+    left: 40px; right: 40px; bottom: 32px;
+    padding: 18px 26px;
+    background: #fff;
+    border: 2px dashed #f59e0b;
+    border-radius: 16px;
+    text-align: center;
+    box-shadow: 0 10px 24px rgba(245, 158, 11, 0.15);
+  }
+  .footer-bar .big {
+    font-size: 26px; font-weight: 800; color: #b45309; letter-spacing: 2px;
+  }
+  .footer-bar .small { font-size: 16px; color: #64748b; margin-top: 2px; }
+</style>
+</head>
+<body>
+  <div class="header">
+    <div class="h-tag">💰 价格透明 · 拍下秒发</div>
+    <div class="h-title">超值<span class="accent">套餐</span></div>
+    <div class="h-sub">按需选择 · 字数够用 · 毕业季性价比之选</div>
+  </div>
+
+  <div class="grid">
+    <!-- 日卡 -->
+    <div class="plan">
+      <div class="plan-name">日卡</div>
+      <div class="plan-price">
+        <span class="cur">¥</span><span class="int">4.9</span>
+      </div>
+      <div class="plan-unit">1 天有效 · 1 万字</div>
+      <div class="divider"></div>
+      <div class="feat-list">
+        <div class="feat-item"><span class="ico">✓</span>单日急用</div>
+        <div class="feat-item"><span class="ico">✓</span>1 万字额度</div>
+        <div class="feat-item"><span class="ico">✓</span>AI 改写</div>
+      </div>
+    </div>
+
+    <!-- 月卡 主推 -->
+    <div class="plan plan-hot">
+      <div class="ribbon">🔥 推荐</div>
+      <div class="plan-name">月卡</div>
+      <div class="plan-price">
+        <span class="cur">¥</span><span class="int">19.9</span>
+      </div>
+      <div class="plan-unit">30 天有效 · 8 万字</div>
+      <div class="divider"></div>
+      <div class="feat-list">
+        <div class="feat-item"><span class="ico">✓</span><span class="hl">30 天</span>畅用</div>
+        <div class="feat-item"><span class="ico">✓</span><span class="hl">8 万字</span>额度</div>
+        <div class="feat-item"><span class="ico">✓</span>大模型改写</div>
+        <div class="feat-item"><span class="ico">✓</span>售后答疑</div>
+      </div>
+    </div>
+
+    <!-- 季卡 -->
+    <div class="plan">
+      <div class="plan-name">季卡</div>
+      <div class="plan-price">
+        <span class="cur">¥</span><span class="int">39.9</span>
+      </div>
+      <div class="plan-unit">90 天有效 · 30 万字</div>
+      <div class="divider"></div>
+      <div class="feat-list">
+        <div class="feat-item"><span class="ico">✓</span>90 天畅用</div>
+        <div class="feat-item"><span class="ico">✓</span>30 万字额度</div>
+        <div class="feat-item"><span class="ico">✓</span>大模型改写</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="footer-bar">
+    <div class="big">⚡ 自动发货 · 卡密即发</div>
+    <div class="small">拍下立刻收到卡密 · 网页粘贴兑换立即可用</div>
+  </div>
+</body>
+</html>

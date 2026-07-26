@@ -13,12 +13,13 @@
 
 ## 生成兑换码（卖了才用）
 
-部署后：
+部署后（一个码 = 1 小时）：
 ```
 curl -X POST https://你的链接.onrender.com/api/admin/gen-codes \
   -H 'Content-Type: application/json' \
-  -d '{"secret":"你的JZ_ADMIN_SECRET","n":10,"chars":5000}'
+  -d '{"secret":"你的JZ_ADMIN_SECRET","n":10,"seconds":3600}'
 ```
+`seconds` = 使用秒数（3600=1小时，7200=2小时，86400=1天）。把返回的码作为卡密在淘宝自动发货。买家打开链接、粘贴码、即激活 1 小时。
 
 ## 注意
 

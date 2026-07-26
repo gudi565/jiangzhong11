@@ -42,13 +42,24 @@ function flash(btn, text) {
 
 let currentOutput = "";
 
-// ── quota ────────────────────────────────────────────────────────────────
-function setQuota(remaining) { if (typeof remaining === "number") $("quota-remaining").textContent = remaining; }
+// ── quota（时间制：active + 剩余秒数）────────────────────────────────────
+function fmtDuration(sec) {
+  if (sec <= 0) return "已到期";
+  const h = Math.floor(sec / 3600), m = Math.ceil((sec % 3600) / 60);
+  return h > 0 ? `${h} 小时 ${m} 分` : `${m} 分钟`;
+}
+function setQuota(summary) {
+  if (!summary) return;
+  const chip = document.querySelector(".quota-chip");
+  chip.innerHTML = summary.active
+    ? `剩余 <b>${fmtDuration(summary.remaining_seconds)}</b>`
+    : `<b>未激活</b> · 需兑换码`;
+}
 
 async function fetchQuota() {
   try {
     const r = await fetch("/api/quota");
-    if (r.ok) { const d = await r.json(); setQuota(d.remaining); }
+    if (r.ok) { const d = await r.json(); setQuota(d); }
   } catch {}
 }
 
@@ -64,9 +75,9 @@ $("redeem-btn").addEventListener("click", async () => {
     });
     const d = await r.json();
     if (d.ok) {
-      setQuota(d.remaining);
+      setQuota(d);
       $("redeem-code").value = "";
-      flash(btn, `+${d.added} 字`);
+      flash(btn, `+${Math.round((d.added_seconds || 0) / 60)} 分钟`);
     } else {
       flash(btn, "失败");
       showError(d.error || "兑换失败");
@@ -136,13 +147,13 @@ function showResult(data, origText) {
   renderText($("orig"), origText);
   renderText($("out"), data.rewrite, origText);
   renderDiag(data);
-  if (data.quota) setQuota(data.quota.remaining);
+  if (data.quota) setQuota(data.quota);
 }
 
 function handleQuotaError(data) {
-  // 402: not enough chars
-  if (data && data.quota) setQuota(data.quota.remaining);
-  showError((data && data.error) || "字数不足");
+  // 402: not active / expired
+  if (data && data.quota) setQuota(data.quota);
+  showError((data && data.error) || "未激活，请输入兑换码");
   $("redeem-code").focus();
 }
 
@@ -230,7 +241,7 @@ $("go").addEventListener("click", async () => {
 
 function showError(msg) {
   if (/Failed to fetch|NetworkError|load failed/i.test(msg || "")) {
-    msg = "网络连接失败（隧道波动或请求太久）。请重试一次；仍不行就关掉「质量管线」开关，用单模型（更快更稳）。";
+    msg = "网络连接失败，请重试；仍不行就关掉「质量管线」开关用单模型（更快更稳）。";
   }
   const el = $("err");
   el.textContent = "⚠ " + msg;

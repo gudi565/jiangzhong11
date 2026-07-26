@@ -1,0 +1,160 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>降重君 · 降重效果对比</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body {
+    width: 800px; height: 800px;
+    font-family: -apple-system, "PingFang SC", "Helvetica Neue", sans-serif;
+    overflow: hidden;
+  }
+  body {
+    position: relative;
+    background:
+      radial-gradient(circle at 50% -10%, #dbeafe 0%, transparent 55%),
+      linear-gradient(180deg, #f8fafc 0%, #eef2f9 100%);
+    color: #0f172a;
+  }
+  /* 顶部标题 */
+  .header {
+    text-align: center;
+    padding-top: 56px;
+  }
+  .h-tag {
+    display: inline-block;
+    padding: 8px 20px;
+    background: #dbeafe;
+    color: #1a56db;
+    font-size: 22px; font-weight: 700;
+    border-radius: 20px;
+    margin-bottom: 18px;
+    letter-spacing: 2px;
+  }
+  .h-title {
+    font-size: 64px; font-weight: 900; color: #0a1f5c;
+    letter-spacing: 3px;
+  }
+  .h-title .un { color: #1a56db; }
+  .h-sub { margin-top: 12px; font-size: 24px; color: #475569; font-weight: 500; }
+
+  /* 对比区 */
+  .wrap {
+    margin: 44px 36px 0;
+    display: grid;
+    grid-template-columns: 1fr auto 1fr;
+    gap: 18px;
+    align-items: stretch;
+  }
+  .col {
+    border-radius: 22px;
+    padding: 30px 26px;
+    box-shadow: 0 14px 32px rgba(15, 23, 42, 0.08);
+    position: relative;
+  }
+  .col-before { background: #fff1f2; border: 2px solid #fecdd3; }
+  .col-after  { background: #ecfdf5; border: 2px solid #a7f3d0; }
+
+  .col-label {
+    display: inline-flex; align-items: center; gap: 8px;
+    padding: 8px 18px; border-radius: 14px;
+    font-size: 24px; font-weight: 800;
+    margin-bottom: 22px;
+  }
+  .col-before .col-label { background: #ef4444; color: #fff; }
+  .col-after  .col-label { background: #10b981; color: #fff; }
+
+  .rate {
+    position: absolute; top: 22px; right: 22px;
+    font-size: 60px; font-weight: 900; opacity: 0.18;
+  }
+  .col-before .rate { color: #ef4444; }
+  .col-after  .rate { color: #10b981; }
+
+  .sentence {
+    font-size: 19px; line-height: 1.55;
+    color: #334155;
+    padding: 12px 14px;
+    border-radius: 10px;
+    margin-bottom: 12px;
+    font-weight: 500;
+  }
+  .sentence:last-child { margin-bottom: 0; }
+  .col-before .sentence { background: rgba(239, 68, 68, 0.14); }
+  .col-after  .sentence { background: rgba(16, 185, 129, 0.14); }
+  .mark-red  { color: #dc2626; font-weight: 800; }
+  .mark-green { color: #059669; font-weight: 800; }
+
+  /* 中间箭头 */
+  .arrow {
+    align-self: center;
+    width: 64px; height: 64px; border-radius: 50%;
+    background: linear-gradient(135deg, #1a56db, #2563eb);
+    display: flex; align-items: center; justify-content: center;
+    font-size: 34px; color: #fff;
+    box-shadow: 0 10px 22px rgba(26, 86, 219, 0.4);
+  }
+
+  /* 底部说明条 */
+  .footer-bar {
+    position: absolute;
+    left: 36px; right: 36px; bottom: 36px;
+    display: flex; justify-content: space-around; align-items: center;
+    padding: 22px 26px;
+    background: linear-gradient(135deg, #1a56db, #2563eb);
+    border-radius: 18px;
+    color: #fff;
+    box-shadow: 0 12px 28px rgba(26, 86, 219, 0.32);
+  }
+  .fb-item { display: flex; flex-direction: column; align-items: center; }
+  .fb-num { font-size: 32px; font-weight: 900; color: #fde68a; }
+  .fb-txt { font-size: 18px; font-weight: 600; opacity: 0.95; margin-top: 2px; }
+  .fb-divider { width: 1px; height: 44px; background: rgba(255,255,255,0.3); }
+</style>
+</head>
+<body>
+  <div class="header">
+    <div class="h-tag">真实效果 · 改写对比</div>
+    <div class="h-title">降重<span class="un">效果对比</span></div>
+    <div class="h-sub">大模型改写 · 语句通顺 · 保留原意</div>
+  </div>
+
+  <div class="wrap">
+    <div class="col col-before">
+      <div class="col-label">⚠️ 降重前</div>
+      <div class="rate">高</div>
+      <div class="sentence">本研究采用<span class="mark-red">定量分析</span>的方法,对样本数据进行了<span class="mark-red">系统性的统计</span>处理。</div>
+      <div class="sentence">结果表明,<span class="mark-red">两者之间存在显著的相关关系</span>,这与已有研究结论一致。</div>
+      <div class="sentence">由此可见,该变量对整体<span class="mark-red">具有较大的影响作用</span>。</div>
+    </div>
+
+    <div class="arrow">→</div>
+
+    <div class="col col-after">
+      <div class="col-label">✓ 降重后</div>
+      <div class="rate">低</div>
+      <div class="sentence">本文借助<span class="mark-green">量化研究</span>路径,对所获数据展开<span class="mark-green">统筹化的统计</span>分析。</div>
+      <div class="sentence">数据显示,<span class="mark-green">二者呈现明显的关联趋势</span>,同既往文献的结论相吻合。</div>
+      <div class="sentence">据此可知,该变量对全局<span class="mark-green">发挥重要作用</span>。</div>
+    </div>
+  </div>
+
+  <div class="footer-bar">
+    <div class="fb-item">
+      <div class="fb-num">改写</div>
+      <div class="fb-txt">AI 智能重写</div>
+    </div>
+    <div class="fb-divider"></div>
+    <div class="fb-item">
+      <div class="fb-num">通顺</div>
+      <div class="fb-txt">自然不生硬</div>
+    </div>
+    <div class="fb-divider"></div>
+    <div class="fb-item">
+      <div class="fb-num">原意</div>
+      <div class="fb-txt">保留学术含义</div>
+    </div>
+  </div>
+</body>
+</html>

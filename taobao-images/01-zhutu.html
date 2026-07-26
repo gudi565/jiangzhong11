@@ -1,0 +1,159 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>降重君 · 论文降重 一键搞定</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body {
+    width: 800px; height: 800px;
+    font-family: -apple-system, "PingFang SC", "Helvetica Neue", sans-serif;
+    overflow: hidden;
+  }
+  body {
+    position: relative;
+    background:
+      radial-gradient(circle at 85% 12%, rgba(245, 158, 11, 0.35) 0%, transparent 38%),
+      radial-gradient(circle at 12% 88%, rgba(59, 130, 246, 0.55) 0%, transparent 42%),
+      linear-gradient(135deg, #0a1f5c 0%, #1a56db 48%, #2563eb 100%);
+    color: #fff;
+  }
+  /* 背景装饰 - 模拟文档行 */
+  .deco-doc {
+    position: absolute;
+    right: -60px; top: 70px;
+    width: 360px; height: 470px;
+    background: rgba(255,255,255,0.06);
+    border-radius: 18px;
+    transform: rotate(14deg);
+    border: 1px solid rgba(255,255,255,0.10);
+  }
+  .deco-doc::before, .deco-doc::after {
+    content: "";
+    position: absolute; left: 38px; right: 38px;
+    height: 14px; border-radius: 7px;
+    background: rgba(255,255,255,0.18);
+  }
+  .deco-doc::before { top: 60px; box-shadow: 0 32px 0 rgba(255,255,255,0.12), 0 64px 0 rgba(255,255,255,0.10), 0 96px 0 rgba(255,255,255,0.10); }
+  .deco-doc::after  { top: 200px; box-shadow: 0 32px 0 rgba(255,255,255,0.10), 0 64px 0 rgba(255,255,255,0.08); }
+
+  /* 品牌徽标 */
+  .brand {
+    position: absolute; top: 44px; left: 44px;
+    display: flex; align-items: center; gap: 14px;
+    padding: 12px 22px 12px 16px;
+    background: rgba(255,255,255,0.14);
+    border: 1px solid rgba(255,255,255,0.28);
+    border-radius: 40px;
+    backdrop-filter: blur(6px);
+  }
+  .brand-mark {
+    width: 40px; height: 40px; border-radius: 12px;
+    background: linear-gradient(135deg, #f59e0b, #f97316);
+    display: flex; align-items: center; justify-content: center;
+    font-size: 22px; font-weight: 900; color: #fff;
+  }
+  .brand-name { font-size: 26px; font-weight: 800; letter-spacing: 1px; }
+  .brand-en { font-size: 14px; opacity: 0.75; letter-spacing: 2px; text-transform: uppercase; }
+
+  /* 主标题区 */
+  .hero {
+    position: absolute;
+    left: 60px; right: 60px;
+    top: 230px;
+  }
+  .tag {
+    display: inline-block;
+    padding: 10px 22px;
+    background: linear-gradient(90deg, #f59e0b, #f97316);
+    color: #fff; font-size: 24px; font-weight: 700;
+    border-radius: 30px;
+    margin-bottom: 28px;
+    box-shadow: 0 8px 22px rgba(249, 115, 22, 0.45);
+  }
+  .title {
+    font-size: 110px;
+    font-weight: 900;
+    line-height: 1.02;
+    letter-spacing: 2px;
+    text-shadow: 0 6px 20px rgba(0,0,0,0.25);
+  }
+  .title .accent {
+    background: linear-gradient(180deg, #fde68a 0%, #f59e0b 100%);
+    -webkit-background-clip: text;
+    background-clip: text;
+    -webkit-text-fill-color: transparent;
+  }
+  .subtitle {
+    margin-top: 32px;
+    font-size: 34px;
+    font-weight: 600;
+    color: rgba(255,255,255,0.92);
+    letter-spacing: 1px;
+  }
+  .subtitle .dot { color: #fbbf24; margin: 0 8px; font-weight: 800; }
+
+  /* 底部三标签 */
+  .feat-row {
+    position: absolute;
+    left: 60px; bottom: 60px;
+    display: flex; gap: 16px;
+  }
+  .feat {
+    display: flex; align-items: center; gap: 10px;
+    padding: 14px 22px;
+    background: rgba(255,255,255,0.12);
+    border: 1px solid rgba(255,255,255,0.25);
+    border-radius: 14px;
+    font-size: 22px; font-weight: 700;
+  }
+  .feat-emoji { font-size: 26px; }
+
+  /* 右下角角标 */
+  .badge {
+    position: absolute;
+    right: 40px; bottom: 56px;
+    width: 168px; height: 168px;
+    border-radius: 50%;
+    background: linear-gradient(135deg, #ef4444 0%, #f97316 100%);
+    display: flex; flex-direction: column;
+    align-items: center; justify-content: center;
+    color: #fff; text-align: center;
+    box-shadow: 0 12px 30px rgba(239, 68, 68, 0.5);
+    border: 4px solid rgba(255,255,255,0.85);
+    transform: rotate(-8deg);
+  }
+  .badge-small { font-size: 18px; font-weight: 700; opacity: 0.95; letter-spacing: 2px; }
+  .badge-big { font-size: 30px; font-weight: 900; margin: 4px 0; letter-spacing: 1px; }
+  .badge-tag { font-size: 14px; font-weight: 600; opacity: 0.9; }
+</style>
+</head>
+<body>
+  <div class="deco-doc"></div>
+
+  <div class="brand">
+    <div class="brand-mark">降</div>
+    <div>
+      <div class="brand-name">降重君</div>
+      <div class="brand-en">JIANGZHONG</div>
+    </div>
+  </div>
+
+  <div class="hero">
+    <div class="tag">AI 论文降重 · 智能改写工具</div>
+    <h1 class="title">论文降重<br><span class="accent">一键搞定</span></h1>
+    <p class="subtitle">AI 智能改写<span class="dot">·</span>保留原意<span class="dot">·</span>降低查重率</p>
+  </div>
+
+  <div class="feat-row">
+    <div class="feat"><span class="feat-emoji">🤖</span>大模型驱动</div>
+    <div class="feat"><span class="feat-emoji">⚡</span>秒发卡密</div>
+  </div>
+
+  <div class="badge">
+    <div class="badge-small">自动发货</div>
+    <div class="badge-big">秒发</div>
+    <div class="badge-tag">卡密即发</div>
+  </div>
+</body>
+</html>

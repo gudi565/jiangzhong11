@@ -1,21 +1,23 @@
-"""Per-client character quota + redemption-code store for 降重.
+"""Time-based access + redemption-code store for 降重.
 
-No user accounts: a client is identified by a random cookie (jz_cid).
-Each new client gets FREE_QUOTA chars; redeeming a code adds chars.
-Codes are opaque strings (JZ-............) meant to be sold as 卡密 via
-dujiaoka (独角数卡) and pasted into the redeem box.
+A client (cookie jz_cid) has an `expires_at` unix timestamp. Access is allowed
+while now < expires_at. Redeeming a code extends expires_at by the code's
+duration (default 1 hour). Codes (JZ-............) are sold as 卡密 on
+Taobao / 独角数卡; the buyer pastes one to activate.
 
 State persists to state.json next to this file. A threading.Lock serializes
-mutations; the (slow) LLM call happens outside the lock.
+mutations; the slow LLM call happens outside the lock.
 """
 import json
 import os
 import secrets
 import threading
+import time
 from pathlib import Path
 
 STATE_PATH = Path(__file__).parent / "state.json"
-FREE_QUOTA = 2000
+FREE_TRIAL_SECONDS = 0          # 0 = 必须有兑换码才能用；设 600 可给新访客 10 分钟试用
+DEFAULT_CODE_SECONDS = 3600     # 一个兑换码默认 = 1 小时
 ADMIN_SECRET = os.environ.get("JZ_ADMIN_SECRET", "dev-secret-change-me")
 
 _lock = threading.Lock()
@@ -43,38 +45,30 @@ def new_client_id() -> str:
 def _client(state, cid):
     c = state["clients"].get(cid)
     if c is None:
-        c = {"remaining": FREE_QUOTA, "used": 0, "redeemed": []}
+        c = {"expires_at": time.time() + FREE_TRIAL_SECONDS, "redeemed": []}
         state["clients"][cid] = c
+    elif "expires_at" not in c:
+        c["expires_at"] = time.time() + FREE_TRIAL_SECONDS
     return c
+
+
+def is_active(cid: str):
+    """Return (active: bool, expires_at: float)."""
+    with _lock:
+        s = _load()
+        c = _client(s, cid)
+        _save(s)
+        return c["expires_at"] > time.time(), c["expires_at"]
 
 
 def get_state_summary(cid: str) -> dict:
     with _lock:
         s = _load()
         c = _client(s, cid)
-        out = {"remaining": c["remaining"], "used": c.get("used", 0), "free_quota": FREE_QUOTA}
         _save(s)
-        return out
-
-
-def check(cid: str, need: int):
-    """True if client has enough quota (also creates/persists the client)."""
-    with _lock:
-        s = _load()
-        c = _client(s, cid)
-        ok = c["remaining"] >= need
-        _save(s)
-        return ok, c["remaining"]
-
-
-def deduct(cid: str, n: int) -> int:
-    with _lock:
-        s = _load()
-        c = _client(s, cid)
-        c["remaining"] = max(0, c["remaining"] - n)
-        c["used"] = c.get("used", 0) + n
-        _save(s)
-        return c["remaining"]
+        exp = c["expires_at"]
+        return {"active": exp > time.time(), "expires_at": exp,
+                "remaining_seconds": max(0, int(exp - time.time()))}
 
 
 def redeem(cid: str, code: str) -> dict:
@@ -91,20 +85,23 @@ def redeem(cid: str, code: str) -> dict:
             return {"ok": False, "error": "兑换码已被使用"}
         cd["used"] = True
         cd["used_by"] = cid
-        c["remaining"] += cd["chars"]
+        dur = cd.get("seconds", DEFAULT_CODE_SECONDS)
+        base = max(c.get("expires_at", 0), time.time())
+        c["expires_at"] = base + dur
         c.setdefault("redeemed", []).append(code)
-        remaining = c["remaining"]
+        remaining = int(c["expires_at"] - time.time())
         _save(s)
-        return {"ok": True, "added": cd["chars"], "remaining": remaining}
+        return {"ok": True, "added_seconds": dur, "active": True,
+                "remaining_seconds": remaining, "expires_at": c["expires_at"]}
 
 
-def gen_codes(n: int, chars: int) -> list:
+def gen_codes(n: int, seconds: int) -> list:
     codes = []
     with _lock:
         s = _load()
         for _ in range(n):
             code = "JZ-" + secrets.token_hex(6).upper()
-            s["codes"][code] = {"chars": chars, "used": False}
+            s["codes"][code] = {"seconds": seconds, "used": False}
             codes.append(code)
         _save(s)
     return codes
