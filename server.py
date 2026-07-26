@@ -137,6 +137,38 @@ def rewrite(req: RewriteReq, request: Request):
         return JSONResponse({"error": f"{type(e).__name__}: {e}"}, status_code=500)
 
 
+class HumanizeReq(BaseModel):
+    text: str = Field(..., min_length=1)
+    strength: str = "medium"
+
+
+@app.post("/api/humanize")
+def humanize(req: HumanizeReq, request: Request):
+    if not engine.KEY:
+        return JSONResponse({"error": "未配置 ZHIPU_API_KEY"}, status_code=500)
+    text = req.text.strip()
+    if len(text) < 10:
+        return JSONResponse({"error": "文本太短，请至少输入 10 个字"}, status_code=400)
+    if len(text) > MAX_CHARS:
+        return JSONResponse({"error": f"文本过长（>{MAX_CHARS} 字），请分段处理"}, status_code=413)
+    if req.strength not in engine.STRENGTH_INSTR:
+        return JSONResponse({"error": "strength 必须是 light / medium / deep"}, status_code=400)
+    active, _ = quota.is_active(request.state.cid)
+    if not active:
+        return JSONResponse(
+            {"error": "未激活或已到期，请输入兑换码（淘宝购买）。",
+             "quota": quota.get_state_summary(request.state.cid)},
+            status_code=402,
+        )
+    try:
+        data = engine.rewrite_humanize(text, req.strength)
+        data["quota"] = quota.get_state_summary(request.state.cid)
+        return data
+    except Exception as e:
+        traceback.print_exc()
+        return JSONResponse({"error": f"{type(e).__name__}: {e}"}, status_code=500)
+
+
 @app.post("/api/rewrite-file")
 async def rewrite_file(
     request: Request,
@@ -144,6 +176,7 @@ async def rewrite_file(
     strength: str = Form("medium"),
     mode: str = Form("pipeline"),
     discipline: str = Form("auto"),
+    task: str = Form("rewrite"),
 ):
     if not engine.KEY:
         return JSONResponse({"error": "未配置 ZHIPU_API_KEY"}, status_code=500)
@@ -172,8 +205,11 @@ async def rewrite_file(
             status_code=402,
         )
     try:
-        data = (engine.rewrite_simple(text, strength, discipline) if mode == "simple"
-                else engine.rewrite_pipeline(text, strength, discipline))
+        if task == "humanize":
+            data = engine.rewrite_humanize(text, strength)
+        else:
+            data = (engine.rewrite_simple(text, strength, discipline) if mode == "simple"
+                    else engine.rewrite_pipeline(text, strength, discipline))
         data["orig_text"] = text
         data["quota"] = quota.get_state_summary(request.state.cid)
         return data

@@ -35,6 +35,13 @@
     </span>
   </div>
 
+  <nav class="tabs" aria-label="功能切换">
+    <button class="tab active" data-task="rewrite" type="button">降重</button>
+    <button class="tab" data-task="humanize" type="button">降 AIGC</button>
+    <button class="tab" data-task="aigc" type="button" disabled>查 AIGC<span class="soon">即将上线</span></button>
+    <button class="tab" data-task="plagiarism" type="button" disabled>查重<span class="soon">即将上线</span></button>
+  </nav>
+
   <textarea id="input" placeholder="把需要降重的段落粘贴在这里（最多 8000 字）…"></textarea>
 
   <label class="pipe-toggle">

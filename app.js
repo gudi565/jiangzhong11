@@ -23,6 +23,21 @@ $("strength").addEventListener("click", (e) => {
   strength = b.dataset.v;
 });
 
+let task = "rewrite";
+document.querySelector(".tabs").addEventListener("click", (e) => {
+  const t = e.target.closest(".tab");
+  if (!t || t.disabled) return;
+  document.querySelectorAll(".tab").forEach((x) => x.classList.remove("active"));
+  t.classList.add("active");
+  task = t.dataset.task;
+  const isRewrite = task === "rewrite";
+  document.querySelector(".pipe-toggle").style.display = isRewrite ? "" : "none";
+  document.querySelector(".field").style.display = isRewrite ? "" : "none";
+  $("go").textContent = task === "humanize" ? "降 AIGC" : "改写";
+  $("result").hidden = true;
+  $("err").hidden = true;
+});
+
 $("sample").addEventListener("click", () => { $("input").value = SAMPLE; });
 
 $("pipe").addEventListener("change", () => {
@@ -164,11 +179,14 @@ $("file").addEventListener("change", async (e) => {
   if (!f) return;
   $("err").hidden = true;
   const btn = $("go");
-  btn.disabled = true; btn.textContent = "上传改写中…";
+  const isHumanize = task === "humanize";
+  const goLabel = isHumanize ? "降 AIGC" : "改写";
+  btn.disabled = true; btn.textContent = isHumanize ? "上传降 AIGC 中…" : "上传改写中…";
   try {
     const fd = new FormData();
     fd.append("file", f);
     fd.append("strength", strength);
+    fd.append("task", task);
     fd.append("mode", $("pipe").checked ? "pipeline" : "simple");
     fd.append("discipline", $("discipline").value);
     const r = await fetch("/api/rewrite-file", { method: "POST", body: fd });
@@ -182,7 +200,7 @@ $("file").addEventListener("change", async (e) => {
   } catch (e) {
     showError(e.message || String(e));
   } finally {
-    btn.disabled = false; btn.textContent = "改写";
+    btn.disabled = false; btn.textContent = goLabel;
     e.target.value = "";
   }
 });
@@ -214,15 +232,19 @@ $("go").addEventListener("click", async () => {
   if (text.length < 10) { showError("请至少输入 10 个字"); return; }
 
   const btn = $("go");
-  const mode = $("pipe").checked ? "pipeline" : "simple";
-  const discipline = $("discipline").value;
+  const isHumanize = task === "humanize";
+  const goLabel = isHumanize ? "降 AIGC" : "改写";
   btn.disabled = true;
-  btn.textContent = "改写中…";
+  btn.textContent = isHumanize ? "降 AIGC 中…" : "改写中…";
   try {
-    const r = await fetch("/api/rewrite", {
+    const endpoint = isHumanize ? "/api/humanize" : "/api/rewrite";
+    const payload = isHumanize
+      ? { text, strength }
+      : { text, strength, mode: $("pipe").checked ? "pipeline" : "simple", discipline: $("discipline").value };
+    const r = await fetch(endpoint, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ text, strength, mode, discipline }),
+      body: JSON.stringify(payload),
     });
     const data = await r.json();
     if (!r.ok) {
@@ -235,7 +257,7 @@ $("go").addEventListener("click", async () => {
     showError(e.message || String(e));
   } finally {
     btn.disabled = false;
-    btn.textContent = "改写";
+    btn.textContent = goLabel;
   }
 });
 

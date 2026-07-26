@@ -259,6 +259,38 @@ def rewrite_simple(text: str, strength: str, discipline: str = "auto") -> dict:
     }
 
 
+HUMANIZE_INSTR = (
+    "请把这段文字「去 AI 化」改写——目标是让它读起来像人写的，降低 AI 检测工具的识别率。手法："
+    "① 大幅拉开句子长度的起伏（短句和长句交错，不要每句都差不多长）；"
+    "② 拆解工整的并列/模板结构，少用「首先/其次/最后」「一方面/另一方面」「综上所述」「由此可见」「值得注意的是」这类 AI 高频套话，换成更自然的说法或直接重组语序；"
+    "③ 偶尔用一点带个人语气的表达（在学术允许范围内），去掉过度工整和过分精准的措辞；"
+    "④ 句式多样化（可适度出现疑问、倒装、省略、插入语）；"
+    "⑤ 不要把每段都写成差不多的「总—分—总」结构。\n\n"
+    "铁律不变：保留原意与逻辑；引用标记（[1]、(Smith, 2020)、（张三，2021）等）、数字、单位、百分比、年份、统计量、公式、术语、专有名词原样保留在语义对应处；不增删信息。只改「AI 味」，不改内容。"
+)
+
+
+def rewrite_humanize(text: str, strength: str = "medium") -> dict:
+    blocks = chunk_paragraphs(text)
+    parts = []
+    for b in blocks:
+        msg = "\n\n".join(x for x in [HUMANIZE_INSTR, STRENGTH_INSTR[strength], f"原文：\n{b}"] if x)
+        parts.append(chat([
+            {"role": "system", "content": SYSTEM},
+            {"role": "user", "content": msg},
+        ], temperature=0.85))
+    out = "\n\n".join(p.strip() for p in parts)
+    sim = similarity(text, out)
+    return {
+        "rewrite": out,
+        "similarity": round(sim, 3),
+        "coverage": round(1 - sim, 3),
+        "chunks": len(blocks),
+        "strength": strength,
+        "mode": "humanize",
+    }
+
+
 def rewrite_pipeline(text: str, strength: str, discipline: str = "auto") -> dict:
     blocks = chunk_paragraphs(text)
     # 跳过单独的分类调用以提速；段落类型感知由 system prompt + discipline overlay 承担
