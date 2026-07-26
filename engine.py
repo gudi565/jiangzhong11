@@ -215,7 +215,7 @@ def process_block(block: str, strength: str, label: str, discipline: str = "auto
     sim = similarity(block, rw)
     retries, repaired = 0, False
 
-    if strength in ("medium", "deep") and sim > TARGET_SIM[strength]:
+    if strength == "deep" and sim > TARGET_SIM[strength]:  # 仅深度模式重试，轻度/中度直接出结果（提速）
         rw = rewrite_block(block, strength, label, discipline, harder=True)
         sim = similarity(block, rw)
         retries = 1
@@ -261,14 +261,15 @@ def rewrite_simple(text: str, strength: str, discipline: str = "auto") -> dict:
 
 def rewrite_pipeline(text: str, strength: str, discipline: str = "auto") -> dict:
     blocks = chunk_paragraphs(text)
-    labels = classify_paragraphs(blocks)
+    # 跳过单独的分类调用以提速；段落类型感知由 system prompt + discipline overlay 承担
+    labels = ["general"] * len(blocks)
     with ThreadPoolExecutor(max_workers=min(2, len(blocks))) as ex:
         futures = [ex.submit(process_block, b, strength, labels[i], discipline) for i, b in enumerate(blocks)]
         results = [f.result() for f in futures]
 
     out = "\n\n".join(r["rewrite"].strip() for r in results)
     overall = similarity(text, out)
-    stages = ["classify", "rewrite", "verify"]
+    stages = ["rewrite", "verify"]
     if any(r["retries"] for r in results):
         stages.append("retry")
     if any(r["repaired"] for r in results):
