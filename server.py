@@ -169,6 +169,38 @@ def humanize(req: HumanizeReq, request: Request):
         return JSONResponse({"error": f"{type(e).__name__}: {e}"}, status_code=500)
 
 
+class EnglishReq(BaseModel):
+    text: str = Field(..., min_length=1)
+    strength: str = "medium"
+
+
+@app.post("/api/edit-english")
+def edit_english(req: EnglishReq, request: Request):
+    if not engine.KEY:
+        return JSONResponse({"error": "未配置 ZHIPU_API_KEY"}, status_code=500)
+    text = req.text.strip()
+    if len(text) < 10:
+        return JSONResponse({"error": "Text too short (min 10 chars)"}, status_code=400)
+    if len(text) > MAX_CHARS:
+        return JSONResponse({"error": f"Text too long (>{MAX_CHARS} chars)"}, status_code=413)
+    if req.strength not in engine.STRENGTH_INSTR:
+        return JSONResponse({"error": "strength must be light / medium / deep"}, status_code=400)
+    active, _ = quota.is_active(request.state.cid)
+    if not active:
+        return JSONResponse(
+            {"error": "未激活或已到期，请输入兑换码（淘宝购买）。",
+             "quota": quota.get_state_summary(request.state.cid)},
+            status_code=402,
+        )
+    try:
+        data = engine.rewrite_english(text, req.strength)
+        data["quota"] = quota.get_state_summary(request.state.cid)
+        return data
+    except Exception as e:
+        traceback.print_exc()
+        return JSONResponse({"error": f"{type(e).__name__}: {e}"}, status_code=500)
+
+
 @app.post("/api/rewrite-file")
 async def rewrite_file(
     request: Request,
@@ -207,6 +239,8 @@ async def rewrite_file(
     try:
         if task == "humanize":
             data = engine.rewrite_humanize(text, strength)
+        elif task == "english":
+            data = engine.rewrite_english(text, strength)
         else:
             data = (engine.rewrite_simple(text, strength, discipline) if mode == "simple"
                     else engine.rewrite_pipeline(text, strength, discipline))

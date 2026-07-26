@@ -33,7 +33,7 @@ document.querySelector(".tabs").addEventListener("click", (e) => {
   const isRewrite = task === "rewrite";
   document.querySelector(".pipe-toggle").style.display = isRewrite ? "" : "none";
   document.querySelector(".field").style.display = isRewrite ? "" : "none";
-  $("go").textContent = task === "humanize" ? "降 AIGC" : "改写";
+  $("go").textContent = task === "humanize" ? "降 AIGC" : (task === "english" ? "英文修改" : "改写");
   $("result").hidden = true;
   $("err").hidden = true;
 });
@@ -179,9 +179,8 @@ $("file").addEventListener("change", async (e) => {
   if (!f) return;
   $("err").hidden = true;
   const btn = $("go");
-  const isHumanize = task === "humanize";
-  const goLabel = isHumanize ? "降 AIGC" : "改写";
-  btn.disabled = true; btn.textContent = isHumanize ? "上传降 AIGC 中…" : "上传改写中…";
+  const goLabel = task === "humanize" ? "降 AIGC" : (task === "english" ? "英文修改" : "改写");
+  btn.disabled = true; btn.textContent = "上传处理中…";
   try {
     const fd = new FormData();
     fd.append("file", f);
@@ -232,15 +231,19 @@ $("go").addEventListener("click", async () => {
   if (text.length < 10) { showError("请至少输入 10 个字"); return; }
 
   const btn = $("go");
-  const isHumanize = task === "humanize";
-  const goLabel = isHumanize ? "降 AIGC" : "改写";
+  const goLabel = task === "humanize" ? "降 AIGC" : (task === "english" ? "英文修改" : "改写");
+  let endpoint, payload;
+  if (task === "humanize") {
+    endpoint = "/api/humanize"; payload = { text, strength };
+  } else if (task === "english") {
+    endpoint = "/api/edit-english"; payload = { text, strength };
+  } else {
+    endpoint = "/api/rewrite";
+    payload = { text, strength, mode: $("pipe").checked ? "pipeline" : "simple", discipline: $("discipline").value };
+  }
   btn.disabled = true;
-  btn.textContent = isHumanize ? "降 AIGC 中…" : "改写中…";
+  btn.textContent = goLabel + "中…";
   try {
-    const endpoint = isHumanize ? "/api/humanize" : "/api/rewrite";
-    const payload = isHumanize
-      ? { text, strength }
-      : { text, strength, mode: $("pipe").checked ? "pipeline" : "simple", discipline: $("discipline").value };
     const r = await fetch(endpoint, {
       method: "POST",
       headers: { "Content-Type": "application/json" },

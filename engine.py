@@ -291,6 +291,44 @@ def rewrite_humanize(text: str, strength: str = "medium") -> dict:
     }
 
 
+ENGLISH_EDIT_INSTR = (
+    "You are a professional academic English editor helping a non-native researcher. "
+    "Revise the text to be publication-ready: fix grammar, spelling, and punctuation; "
+    "improve clarity, flow, and academic tone; make awkward or non-native phrasing natural and professional; "
+    "tighten wordy sentences. "
+    "Rules: preserve meaning exactly; keep all technical terms, proper nouns, numbers, units, statistics, "
+    "citations (e.g., [1], (Smith, 2020)), equations, and abbreviations unchanged; do not add claims or delete information; "
+    "keep paragraph structure. Output only the revised English text, no commentary."
+)
+
+ENGLISH_STRENGTH = {
+    "light": "Light proofreading: fix only grammar, spelling, and punctuation. Keep original wording otherwise.",
+    "medium": "Moderate polish: fix errors and improve clarity, flow, and academic tone. Keep meaning and most wording.",
+    "deep": "Deep revision: thoroughly rewrite for stronger academic impact — vary sentence structure, sharpen phrasing — while strictly preserving meaning, data, citations, and technical terms.",
+}
+
+
+def rewrite_english(text: str, strength: str = "medium") -> dict:
+    blocks = chunk_paragraphs(text)
+    parts = []
+    for b in blocks:
+        msg = "\n\n".join([ENGLISH_EDIT_INSTR, ENGLISH_STRENGTH[strength], f"Original:\n{b}"])
+        parts.append(chat([
+            {"role": "system", "content": "You are a professional academic English editor."},
+            {"role": "user", "content": msg},
+        ], temperature=0.6))
+    out = "\n\n".join(p.strip() for p in parts)
+    sim = similarity(text, out)
+    return {
+        "rewrite": out,
+        "similarity": round(sim, 3),
+        "coverage": round(1 - sim, 3),
+        "chunks": len(blocks),
+        "strength": strength,
+        "mode": "english",
+    }
+
+
 def rewrite_pipeline(text: str, strength: str, discipline: str = "auto") -> dict:
     blocks = chunk_paragraphs(text)
     # 跳过单独的分类调用以提速；段落类型感知由 system prompt + discipline overlay 承担
