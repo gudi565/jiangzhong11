@@ -1,0 +1,10 @@
+state.json
+__pycache__
+*.pyc
+.git
+.gitignore
+.claude
+*.log
+.DS_Store
+降重-*.command
+README-deploy.md

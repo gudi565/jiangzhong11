@@ -1,0 +1,8 @@
+state.json
+__pycache__/
+*.pyc
+*.log
+.DS_Store
+/tmp/
+.claude/
+降重-*.command

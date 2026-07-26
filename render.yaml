@@ -1,0 +1,13 @@
+services:
+  - type: web
+    name: jiangzhong
+    runtime: docker
+    plan: free
+    dockerfilePath: ./Dockerfile
+    envVars:
+      - key: ZHIPU_API_KEY
+        sync: false
+      - key: JZ_ADMIN_SECRET
+        sync: false
+      - key: PYTHONUNBUFFERED
+        value: "1"

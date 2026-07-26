@@ -1,0 +1,84 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>降重 · jiangzhong</title>
+<link rel="stylesheet" href="/assets/style.css" />
+</head>
+<body>
+<header class="hero">
+  <h1>降重</h1>
+  <p class="sub">基于 GLM-4-Flash 的中文学术改写 · 保引用 · 保数据 · 保留原意</p>
+</header>
+
+<main class="card">
+  <div class="quota-bar">
+    <span class="quota-chip">剩余 <b id="quota-remaining">—</b> 字</span>
+    <span class="quota-redeem">
+      <input id="redeem-code" type="text" placeholder="输入兑换码" autocomplete="off" />
+      <button id="redeem-btn" type="button" class="ghost mini">兑换</button>
+    </span>
+  </div>
+
+  <textarea id="input" placeholder="把需要降重的段落粘贴在这里（最多 8000 字）…"></textarea>
+
+  <label class="pipe-toggle">
+    <input type="checkbox" id="pipe" checked />
+    <span>质量管线：分类 → 针对性重写 → 校验 → 重试 → 修复</span>
+  </label>
+
+  <div class="controls">
+    <div class="selectors">
+      <div class="segmented" id="strength">
+        <button data-v="light" type="button">轻度</button>
+        <button data-v="medium" type="button" class="active">中度</button>
+        <button data-v="deep" type="button">深度</button>
+      </div>
+      <label class="field">
+        <span>学科</span>
+        <select id="discipline">
+          <option value="auto">自动</option>
+          <option value="stem">理工</option>
+          <option value="humanities">人文社科</option>
+          <option value="medicine">医学</option>
+          <option value="law">法学</option>
+        </select>
+      </label>
+    </div>
+    <div class="actions">
+      <input type="file" id="file" accept=".docx" hidden />
+      <button id="sample" type="button" class="ghost">试试样例</button>
+      <button id="upload" type="button" class="ghost">上传 Word</button>
+      <button id="go" type="button" class="primary">改写</button>
+    </div>
+  </div>
+
+  <div id="err" class="err" hidden></div>
+
+  <section id="result" hidden>
+    <div class="metrics">
+      <div class="metric"><span class="num" id="m-cov">—</span><span class="lab">改写差异度<br><small>文字层面 · 估算</small></span></div>
+      <div class="metric"><span class="num" id="m-sim">—</span><span class="lab">与原文相似度<br><small>文字层面 · 估算</small></span></div>
+      <div class="metric"><span class="num" id="m-len">—</span><span class="lab">字数<br><small>原 → 改</small></span></div>
+    </div>
+    <div id="diag" class="diag" hidden></div>
+    <div class="cols">
+      <div class="col">
+        <h3>原文</h3>
+        <div id="orig" class="text"></div>
+      </div>
+      <div class="col">
+        <h3>降重后 <button id="copy" type="button" class="ghost mini">复制</button><button id="download" type="button" class="ghost mini">下载 Word</button></h3>
+        <div id="out" class="text"></div>
+      </div>
+    </div>
+    <p class="note">「改写差异度」是按字符二元组估算的<b>文字改写幅度</b>，<b>不等于</b>知网/万方等系统的实际查重率，两者相关但不相等。权威查重率请以 <a href="https://cx.cnki.net" target="_blank" rel="noopener">知网 cx.cnki.net</a> 等官方结果为准。</p>
+  </section>
+</main>
+
+<footer class="foot">prototype · glm-4-flash · <span id="mode-label">质量管线</span></footer>
+
+<script src="/assets/app.js"></script>
+</body>
+</html>
