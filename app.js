@@ -23,6 +23,15 @@ $("strength").addEventListener("click", (e) => {
   strength = b.dataset.v;
 });
 
+let englishSub = "polish";
+$("english-mode").addEventListener("click", (e) => {
+  const b = e.target.closest("button");
+  if (!b) return;
+  document.querySelectorAll("#english-mode button").forEach((x) => x.classList.remove("active"));
+  b.classList.add("active");
+  englishSub = b.dataset.sub;
+});
+
 let task = "rewrite";
 const TASK_LABELS = { rewrite: "改写", humanize: "降 AIGC", english: "英文修改", aigc: "查 AIGC 率", plagiarism: "查重" };
 document.querySelector(".tabs").addEventListener("click", (e) => {
@@ -37,6 +46,7 @@ document.querySelector(".tabs").addEventListener("click", (e) => {
   document.querySelector(".field").style.display = isRewrite ? "" : "none";
   document.getElementById("strength").style.display = isCheck ? "none" : "";
   document.getElementById("upload").style.display = isCheck ? "none" : "";
+  document.getElementById("english-mode").style.display = (task === "english") ? "" : "none";
   $("go").textContent = TASK_LABELS[task] || "改写";
   $("result").hidden = true;
   $("check-result").hidden = true;
@@ -160,6 +170,7 @@ function renderDiag(data) {
 
 function showResult(data, origText) {
   currentOutput = data.rewrite;
+  document.querySelector(".metrics").style.display = (data.mode === "english" && data.sub === "translate") ? "none" : "";
   $("m-cov").textContent = Math.round(data.coverage * 100) + "%";
   $("m-sim").textContent = Math.round(data.similarity * 100) + "%";
   $("m-len").textContent = origText.length + " → " + data.rewrite.length;
@@ -241,6 +252,7 @@ $("file").addEventListener("change", async (e) => {
     fd.append("task", task);
     fd.append("mode", $("pipe").checked ? "pipeline" : "simple");
     fd.append("discipline", $("discipline").value);
+    fd.append("sub", englishSub);
     const r = await fetch("/api/rewrite-file", { method: "POST", body: fd });
     const data = await r.json();
     if (!r.ok) {
@@ -289,7 +301,7 @@ $("go").addEventListener("click", async () => {
   if (task === "humanize") {
     endpoint = "/api/humanize"; payload = { text, strength };
   } else if (task === "english") {
-    endpoint = "/api/edit-english"; payload = { text, strength };
+    endpoint = "/api/edit-english"; payload = { text, strength, sub: englishSub };
   } else if (task === "aigc") {
     endpoint = "/api/aigc-check"; payload = { text }; isCheck = true;
   } else if (task === "plagiarism") {

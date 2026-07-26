@@ -308,15 +308,36 @@ ENGLISH_STRENGTH = {
 }
 
 
-def rewrite_english(text: str, strength: str = "medium") -> dict:
+ENGLISH_DEDUP_INSTR = (
+    "You are an academic paraphrasing tool. Rewrite the English text to substantially reduce its textual similarity to the original "
+    "(to lower plagiarism-detection scores) while preserving the meaning, all data, citations, and technical terms. "
+    "Thoroughly change sentence structure, vocabulary, and phrasing — do not just swap synonyms. Keep it natural, fluent, academic English. "
+    "Rules: same meaning; citations ([1], (Smith, 2020)), numbers, units, equations, and proper nouns unchanged; output only the rewritten English."
+)
+
+ENGLISH_TRANSLATE_INSTR = (
+    "You are a professional academic translator. Translate the Chinese text into natural, publication-ready academic English. "
+    "Rules: translate accurately without adding or omitting meaning; keep all numbers, units, citations ([1]), and proper nouns "
+    "(transliterate Chinese names, keep any English terms already present); match academic tone and terminology; output only the English translation."
+)
+
+
+def rewrite_english(text: str, strength: str = "medium", sub: str = "polish") -> dict:
     blocks = chunk_paragraphs(text)
+    if sub == "dedup":
+        instr, extra, sysmsg, temp = ENGLISH_DEDUP_INSTR, ENGLISH_STRENGTH[strength], "You are an academic paraphrasing tool.", 0.7
+    elif sub == "translate":
+        instr, extra, sysmsg, temp = ENGLISH_TRANSLATE_INSTR, "", "You are a professional academic translator (Chinese to English).", 0.3
+    else:  # polish
+        instr, extra, sysmsg, temp = ENGLISH_EDIT_INSTR, ENGLISH_STRENGTH[strength], "You are a professional academic English editor.", 0.6
+    label = "Translate to English:" if sub == "translate" else "Original:"
     parts = []
     for b in blocks:
-        msg = "\n\n".join([ENGLISH_EDIT_INSTR, ENGLISH_STRENGTH[strength], f"Original:\n{b}"])
+        msg = "\n\n".join(x for x in [instr, extra, f"{label}\n{b}"] if x)
         parts.append(chat([
-            {"role": "system", "content": "You are a professional academic English editor."},
+            {"role": "system", "content": sysmsg},
             {"role": "user", "content": msg},
-        ], temperature=0.6))
+        ], temperature=temp))
     out = "\n\n".join(p.strip() for p in parts)
     sim = similarity(text, out)
     return {
@@ -326,6 +347,7 @@ def rewrite_english(text: str, strength: str = "medium") -> dict:
         "chunks": len(blocks),
         "strength": strength,
         "mode": "english",
+        "sub": sub,
     }
 
 

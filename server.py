@@ -173,6 +173,7 @@ def humanize(req: HumanizeReq, request: Request):
 class EnglishReq(BaseModel):
     text: str = Field(..., min_length=1)
     strength: str = "medium"
+    sub: str = "polish"
 
 
 @app.post("/api/edit-english")
@@ -194,7 +195,7 @@ def edit_english(req: EnglishReq, request: Request):
             status_code=402,
         )
     try:
-        data = engine.rewrite_english(text, req.strength)
+        data = engine.rewrite_english(text, req.strength, req.sub)
         data["quota"] = quota.get_state_summary(request.state.cid)
         return data
     except Exception as e:
@@ -250,6 +251,7 @@ async def rewrite_file(
     mode: str = Form("pipeline"),
     discipline: str = Form("auto"),
     task: str = Form("rewrite"),
+    sub: str = Form("polish"),
 ):
     if not engine.KEY:
         return JSONResponse({"error": "未配置 ZHIPU_API_KEY"}, status_code=500)
@@ -281,7 +283,7 @@ async def rewrite_file(
         if task == "humanize":
             data = engine.rewrite_humanize(text, strength)
         elif task == "english":
-            data = engine.rewrite_english(text, strength)
+            data = engine.rewrite_english(text, strength, sub)
         else:
             data = (engine.rewrite_simple(text, strength, discipline) if mode == "simple"
                     else engine.rewrite_pipeline(text, strength, discipline))
