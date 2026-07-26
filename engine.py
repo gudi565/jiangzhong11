@@ -74,23 +74,23 @@ def chat(messages, temperature=0.7) -> str:
         "temperature": temperature, "top_p": 0.85,
     }).encode("utf-8")
     last_err = None
-    for attempt in range(3):
+    for attempt in range(4):  # GLM 从海外连时偶发超时，多重试几次提高成功率
         req = urllib.request.Request(
             ENDPOINT, data=body,
             headers={"Authorization": f"Bearer {KEY}", "Content-Type": "application/json"},
         )
         try:
-            with urllib.request.urlopen(req, timeout=30) as resp:
+            with urllib.request.urlopen(req, timeout=20) as resp:
                 data = json.loads(resp.read())
         except urllib.error.HTTPError as e:
             last_err = RuntimeError(f"GLM HTTP {e.code}: {e.read()[:200]!r}")
-            if e.code in (429, 500, 502, 503, 504) and attempt < 2:  # 退避重试
-                time.sleep(1.5 * (attempt + 1)); continue
+            if e.code in (429, 500, 502, 503, 504) and attempt < 3:  # 退避重试
+                time.sleep(1.0 + attempt * 0.5); continue
             raise last_err
         except OSError as e:  # 含 socket.timeout（3.9 里不是 TimeoutError，必须用 OSError 接）
             last_err = RuntimeError(f"网络/超时: {e}")
-            if attempt < 2:
-                time.sleep(1.0 * (attempt + 1)); continue
+            if attempt < 3:
+                time.sleep(1.0 + attempt * 0.5); continue
             raise last_err
         try:
             content = data["choices"][0]["message"]["content"]
