@@ -24,6 +24,7 @@ $("strength").addEventListener("click", (e) => {
 });
 
 let task = "rewrite";
+const TASK_LABELS = { rewrite: "改写", humanize: "降 AIGC", english: "英文修改", aigc: "查 AIGC 率", plagiarism: "查重" };
 document.querySelector(".tabs").addEventListener("click", (e) => {
   const t = e.target.closest(".tab");
   if (!t || t.disabled) return;
@@ -31,10 +32,14 @@ document.querySelector(".tabs").addEventListener("click", (e) => {
   t.classList.add("active");
   task = t.dataset.task;
   const isRewrite = task === "rewrite";
+  const isCheck = task === "aigc" || task === "plagiarism";
   document.querySelector(".pipe-toggle").style.display = isRewrite ? "" : "none";
   document.querySelector(".field").style.display = isRewrite ? "" : "none";
-  $("go").textContent = task === "humanize" ? "降 AIGC" : (task === "english" ? "英文修改" : "改写");
+  document.getElementById("strength").style.display = isCheck ? "none" : "";
+  document.getElementById("upload").style.display = isCheck ? "none" : "";
+  $("go").textContent = TASK_LABELS[task] || "改写";
   $("result").hidden = true;
+  $("check-result").hidden = true;
   $("err").hidden = true;
 });
 
@@ -165,6 +170,27 @@ function showResult(data, origText) {
   if (data.quota) setQuota(data.quota);
 }
 
+function showAigcReport(data) {
+  const score = data.aigc_score;
+  const color = data.color || "";
+  $("aigc-score").textContent = score + "%";
+  $("aigc-score").className = "gauge-num " + color;
+  $("aigc-bar").style.width = score + "%";
+  $("aigc-bar").className = color;
+  $("aigc-verdict").textContent = data.verdict;
+  $("aigc-verdict").className = "aigc-verdict " + color;
+  $("aigc-signals").innerHTML = data.signals.map((s) => `
+    <div class="signal">
+      <div class="signal-head"><span class="signal-name">${s.name}</span><span class="signal-val">${s.value}</span></div>
+      <div class="signal-bar"><span style="width:${s.score}%"></span></div>
+      <div class="signal-hint">${s.hint}</div>
+    </div>`).join("");
+  $("aigc-note").textContent = data.note;
+  $("check-result").hidden = false;
+  $("result").hidden = true;
+  if (data.quota) setQuota(data.quota);
+}
+
 function handleQuotaError(data) {
   // 402: not active / expired
   if (data && data.quota) setQuota(data.quota);
@@ -231,12 +257,14 @@ $("go").addEventListener("click", async () => {
   if (text.length < 10) { showError("请至少输入 10 个字"); return; }
 
   const btn = $("go");
-  const goLabel = task === "humanize" ? "降 AIGC" : (task === "english" ? "英文修改" : "改写");
-  let endpoint, payload;
+  const goLabel = TASK_LABELS[task] || "改写";
+  let endpoint, payload, isCheck = false;
   if (task === "humanize") {
     endpoint = "/api/humanize"; payload = { text, strength };
   } else if (task === "english") {
     endpoint = "/api/edit-english"; payload = { text, strength };
+  } else if (task === "aigc") {
+    endpoint = "/api/aigc-check"; payload = { text }; isCheck = true;
   } else {
     endpoint = "/api/rewrite";
     payload = { text, strength, mode: $("pipe").checked ? "pipeline" : "simple", discipline: $("discipline").value };
@@ -255,7 +283,7 @@ $("go").addEventListener("click", async () => {
       else showError(data.error || ("HTTP " + r.status));
       return;
     }
-    showResult(data, text);
+    if (isCheck) showAigcReport(data); else showResult(data, text);
   } catch (e) {
     showError(e.message || String(e));
   } finally {

@@ -39,7 +39,7 @@
     <button class="tab active" data-task="rewrite" type="button">降重</button>
     <button class="tab" data-task="humanize" type="button">降 AIGC</button>
     <button class="tab" data-task="english" type="button">英文修改</button>
-    <button class="tab" data-task="aigc" type="button" disabled>查 AIGC<span class="soon">即将上线</span></button>
+    <button class="tab" data-task="aigc" type="button">查 AIGC</button>
     <button class="tab" data-task="plagiarism" type="button" disabled>查重<span class="soon">即将上线</span></button>
   </nav>
 
@@ -96,6 +96,19 @@
       </div>
     </div>
     <p class="note">「改写差异度」是按字符二元组估算的<b>文字改写幅度</b>，<b>不等于</b>知网/万方等系统的实际查重率，两者相关但不相等。权威查重率请以 <a href="https://cx.cnki.net" target="_blank" rel="noopener">知网 cx.cnki.net</a> 等官方结果为准。</p>
+  </section>
+
+  <section id="check-result" hidden>
+    <div class="aigc-report">
+      <div class="gauge">
+        <div class="gauge-num" id="aigc-score">—</div>
+        <div class="gauge-cap">AIGC 概率（参考估算）</div>
+        <div class="gauge-track"><span id="aigc-bar"></span></div>
+      </div>
+      <div class="aigc-verdict" id="aigc-verdict">—</div>
+      <div class="signals" id="aigc-signals"></div>
+      <p class="note" id="aigc-note"></p>
+    </div>
   </section>
 </main>
 

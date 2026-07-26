@@ -10,6 +10,7 @@ from pydantic import BaseModel, Field
 import engine
 import docx_io
 import quota
+import detectors
 
 BASE_DIR = Path(__file__).parent
 MAX_CHARS = engine.MAX_CHARS
@@ -199,6 +200,27 @@ def edit_english(req: EnglishReq, request: Request):
     except Exception as e:
         traceback.print_exc()
         return JSONResponse({"error": f"{type(e).__name__}: {e}"}, status_code=500)
+
+
+class CheckReq(BaseModel):
+    text: str = Field(..., min_length=1)
+
+
+@app.post("/api/aigc-check")
+def aigc_check(req: CheckReq, request: Request):
+    text = req.text.strip()
+    if len(text) < 10:
+        return JSONResponse({"error": "文本太短，请至少输入 10 个字"}, status_code=400)
+    active, _ = quota.is_active(request.state.cid)
+    if not active:
+        return JSONResponse(
+            {"error": "未激活或已到期，请输入兑换码（淘宝购买）。",
+             "quota": quota.get_state_summary(request.state.cid)},
+            status_code=402,
+        )
+    data = detectors.detect_aigc(text)
+    data["quota"] = quota.get_state_summary(request.state.cid)
+    return data
 
 
 @app.post("/api/rewrite-file")

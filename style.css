@@ -267,6 +267,32 @@ button.ghost.mini { padding: 4px 12px; font-size: 12.5px; }
 .note a { color: var(--accent-2); font-weight: 600; }
 .note b { color: var(--muted); font-weight: 700; }
 
+/* ===== AIGC report ===== */
+.aigc-report { margin-top: 22px; }
+.gauge { text-align: center; padding: 26px 20px; background: #FBFCFD; border: 1px solid var(--line); border-radius: var(--r-md); }
+.gauge-num { font-size: 56px; font-weight: 800; letter-spacing: -0.03em; color: var(--accent-ink); line-height: 1; }
+.gauge-num.ok { color: var(--ok); }
+.gauge-num.warn { color: var(--warn); }
+.gauge-num.err { color: var(--err); }
+.gauge-cap { color: var(--muted); font-size: 12.5px; margin-top: 8px; }
+.gauge-track { height: 10px; background: #EEF2F6; border-radius: 980px; margin: 16px auto 0; max-width: 380px; overflow: hidden; }
+.gauge-track span { display: block; height: 100%; width: 0; background: var(--accent-2); border-radius: 980px; transition: width .5s ease; }
+.gauge-track span.ok { background: var(--ok); }
+.gauge-track span.warn { background: var(--warn); }
+.gauge-track span.err { background: var(--err); }
+.aigc-verdict { text-align: center; font-size: 17px; font-weight: 700; margin: 18px 0 20px; color: var(--accent-ink); }
+.aigc-verdict.ok { color: var(--ok); }
+.aigc-verdict.warn { color: var(--warn); }
+.aigc-verdict.err { color: var(--err); }
+.signals { display: grid; gap: 10px; }
+.signal { background: #FBFCFD; border: 1px solid var(--line); border-radius: var(--r-sm); padding: 12px 14px; }
+.signal-head { display: flex; justify-content: space-between; align-items: center; gap: 10px; }
+.signal-name { font-size: 13px; font-weight: 700; color: var(--ink); }
+.signal-val { font-size: 12px; color: var(--muted); white-space: nowrap; }
+.signal-bar { height: 6px; background: #EEF2F6; border-radius: 980px; margin: 8px 0 4px; overflow: hidden; }
+.signal-bar span { display: block; height: 100%; background: linear-gradient(90deg, var(--ok), var(--warn) 55%, var(--err)); border-radius: 980px; }
+.signal-hint { font-size: 11.5px; color: var(--faint); }
+
 .foot { text-align: center; color: var(--faint); font-size: 12px; padding: 0 0 40px; font-weight: 500; }
 
 /* ===== focus / a11y ===== */
