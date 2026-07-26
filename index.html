@@ -40,7 +40,7 @@
     <button class="tab" data-task="humanize" type="button">降 AIGC</button>
     <button class="tab" data-task="english" type="button">英文修改</button>
     <button class="tab" data-task="aigc" type="button">查 AIGC</button>
-    <button class="tab" data-task="plagiarism" type="button" disabled>查重<span class="soon">即将上线</span></button>
+    <button class="tab" data-task="plagiarism" type="button">查重</button>
   </nav>
 
   <textarea id="input" placeholder="把需要降重的段落粘贴在这里（最多 8000 字）…"></textarea>
@@ -108,6 +108,17 @@
       <div class="aigc-verdict" id="aigc-verdict">—</div>
       <div class="signals" id="aigc-signals"></div>
       <p class="note" id="aigc-note"></p>
+    </div>
+    <div class="plag-report" hidden>
+      <div class="plag-summary">
+        <div class="plag-score" id="plag-score">—</div>
+        <div class="plag-cap">与网络雷同的句子占比（参考）</div>
+        <div class="plag-bar-track"><span id="plag-bar"></span></div>
+        <div class="plag-verdict" id="plag-verdict">—</div>
+      </div>
+      <div class="plag-meta" id="plag-meta"></div>
+      <div class="matches" id="plag-matches"></div>
+      <p class="note" id="plag-note"></p>
     </div>
   </section>
 </main>

@@ -186,6 +186,33 @@ function showAigcReport(data) {
       <div class="signal-hint">${s.hint}</div>
     </div>`).join("");
   $("aigc-note").textContent = data.note;
+  document.querySelector(".aigc-report").hidden = false;
+  document.querySelector(".plag-report").hidden = true;
+  $("check-result").hidden = false;
+  $("result").hidden = true;
+  if (data.quota) setQuota(data.quota);
+}
+
+function showPlagiarismReport(data) {
+  const score = data.similarity_score;
+  const color = data.color || "";
+  $("plag-score").textContent = score + "%";
+  $("plag-score").className = "plag-score " + color;
+  $("plag-bar").style.width = score + "%";
+  $("plag-bar").className = color;
+  $("plag-verdict").textContent = data.verdict;
+  $("plag-verdict").className = "plag-verdict " + color;
+  $("plag-meta").textContent = `检查了 ${data.checked_count} 个句子，发现 ${data.matched_count} 处网络雷同`;
+  $("plag-matches").innerHTML = (data.matches || []).length
+    ? data.matches.map((m) => `
+        <div class="match">
+          <div class="match-sent">${m.sentence}</div>
+          <div class="match-meta"><span class="match-ov ${m.overlap >= 70 ? "err" : m.overlap >= 55 ? "warn" : "ok"}">${m.overlap}% 雷同</span> · <a href="${m.url}" target="_blank" rel="noopener">${m.title || m.url}</a></div>
+        </div>`).join("")
+    : '<div class="match-empty">未发现明显网络雷同 ✓</div>';
+  $("plag-note").textContent = data.note;
+  document.querySelector(".aigc-report").hidden = true;
+  document.querySelector(".plag-report").hidden = false;
   $("check-result").hidden = false;
   $("result").hidden = true;
   if (data.quota) setQuota(data.quota);
@@ -265,6 +292,8 @@ $("go").addEventListener("click", async () => {
     endpoint = "/api/edit-english"; payload = { text, strength };
   } else if (task === "aigc") {
     endpoint = "/api/aigc-check"; payload = { text }; isCheck = true;
+  } else if (task === "plagiarism") {
+    endpoint = "/api/plagiarism-check"; payload = { text }; isCheck = true;
   } else {
     endpoint = "/api/rewrite";
     payload = { text, strength, mode: $("pipe").checked ? "pipeline" : "simple", discipline: $("discipline").value };
@@ -283,7 +312,9 @@ $("go").addEventListener("click", async () => {
       else showError(data.error || ("HTTP " + r.status));
       return;
     }
-    if (isCheck) showAigcReport(data); else showResult(data, text);
+    if (task === "plagiarism") showPlagiarismReport(data);
+    else if (isCheck) showAigcReport(data);
+    else showResult(data, text);
   } catch (e) {
     showError(e.message || String(e));
   } finally {

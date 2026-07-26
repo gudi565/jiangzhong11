@@ -223,6 +223,25 @@ def aigc_check(req: CheckReq, request: Request):
     return data
 
 
+@app.post("/api/plagiarism-check")
+def plagiarism_check(req: CheckReq, request: Request):
+    text = req.text.strip()
+    if len(text) < 10:
+        return JSONResponse({"error": "文本太短，请至少输入 10 个字"}, status_code=400)
+    active, _ = quota.is_active(request.state.cid)
+    if not active:
+        return JSONResponse(
+            {"error": "未激活或已到期，请输入兑换码（淘宝购买）。",
+             "quota": quota.get_state_summary(request.state.cid)},
+            status_code=402,
+        )
+    data = detectors.check_plagiarism(text)
+    if "error" in data:
+        return JSONResponse(data, status_code=500)
+    data["quota"] = quota.get_state_summary(request.state.cid)
+    return data
+
+
 @app.post("/api/rewrite-file")
 async def rewrite_file(
     request: Request,

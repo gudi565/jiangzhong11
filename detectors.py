@@ -25,6 +25,82 @@ def _clamp(x, lo=0, hi=100):
     return max(lo, min(hi, x))
 
 
+def _bg(s):
+    s = re.sub(r"\s+", "", s)
+    return set(s[i:i + 2] for i in range(len(s) - 1)) if len(s) > 1 else ({s} if s else set())
+
+
+def _containment(needle, haystack):
+    """How much of `needle`'s bigrams appear in `haystack` (0-1)."""
+    A, B = _bg(needle), _bg(haystack)
+    if not A or not B:
+        return 0.0
+    return len(A & B) / len(A)
+
+
+def check_plagiarism(text: str, max_checks: int = 8) -> dict:
+    """逐句在 DuckDuckGo 上搜，比对公开网络文本的重叠。只抓得到'复制自网络'
+    的雷同，抓不到'抄自知网/万方等闭源库'的内容。≠ 知网查重率。"""
+    text = text or ""
+    sents = _sentences(text)
+    # 优先检查较长、较可能独特的句子
+    candidates = sorted(sents, key=lambda s: len(re.sub(r"\s+", "", s)), reverse=True)[:max_checks]
+
+    try:
+        from duckduckgo_search import DDGS
+    except Exception:
+        return {"error": "服务器未装搜索依赖（duckduckgo-search）"}
+
+    matches = []
+    checked = 0
+    try:
+        ddgs = DDGS()
+        for s in candidates:
+            q = re.sub(r"\s+", " ", s).strip()[:70]
+            if len(q) < 8:
+                continue
+            checked += 1
+            try:
+                results = list(ddgs.text(q, max_results=3))
+            except Exception:
+                results = []
+            best = None
+            for r in results:
+                blob = " ".join([r.get("title", ""), r.get("body", ""), r.get("snippet", "")]).strip()
+                ov = _containment(s, blob)
+                if best is None or ov > best[0]:
+                    best = (ov, r)
+            if best and best[0] >= 0.5:
+                matches.append({
+                    "sentence": s,
+                    "overlap": round(best[0] * 100),
+                    "title": (best[1].get("title", "") or "")[:80],
+                    "url": best[1].get("href") or best[1].get("url") or "",
+                })
+    except Exception as e:
+        return {"error": f"搜索暂不可用：{type(e).__name__}: {e}"}
+
+    score = round(len(matches) / max(checked, 1) * 100)
+    if score < 20:
+        verdict, color = "未发现明显网络雷同", "ok"
+    elif score < 50:
+        verdict, color = "部分内容与网络雷同", "warn"
+    else:
+        verdict, color = "大量内容与网络雷同", "err"
+
+    return {
+        "similarity_score": score,
+        "verdict": verdict,
+        "color": color,
+        "matched_count": len(matches),
+        "checked_count": checked,
+        "matches": matches[:8],
+        "note": ("逐句比对公开互联网（DuckDuckGo）。能发现「复制粘贴自网络」的雷同，"
+                 "抓不到「抄自 知网/万方 等闭源库」的内容。≠ 知网查重率，仅供参考。"
+                 "权威查重率请以 cx.cnki.net 官方结果为准。"),
+    }
+
+
 def detect_aigc(text: str) -> dict:
     text = text or ""
     chars = len(re.sub(r"\s+", "", text))
