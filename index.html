@@ -32,7 +32,14 @@
     <span class="quota-redeem">
       <input id="redeem-code" type="text" placeholder="输入兑换码" autocomplete="off" />
       <button id="redeem-btn" type="button" class="ghost mini">兑换</button>
+      <button id="buy-btn" type="button" class="primary mini">购买时长</button>
     </span>
+  </div>
+  <div id="buy-panel" class="buy-panel" hidden>
+    <button class="plan-btn" data-plan="1h" type="button"><span class="plan-name">1 小时</span><span class="plan-price">¥9.9</span></button>
+    <button class="plan-btn" data-plan="1d" type="button"><span class="plan-name">1 天</span><span class="plan-price">¥29.9</span></button>
+    <button class="plan-btn" data-plan="7d" type="button"><span class="plan-name">7 天</span><span class="plan-price">¥69.9</span></button>
+    <div id="buy-status" class="buy-status"></div>
   </div>
 
   <nav class="tabs" aria-label="功能切换">

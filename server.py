@@ -1,4 +1,5 @@
 """降重 web service — FastAPI over engine.py + docx I/O + time-based quota."""
+import secrets
 import traceback
 from pathlib import Path
 
@@ -11,6 +12,7 @@ import engine
 import docx_io
 import quota
 import detectors
+import pay
 
 BASE_DIR = Path(__file__).parent
 MAX_CHARS = engine.MAX_CHARS
@@ -324,3 +326,55 @@ def make_docx(req: DocReq, request: Request):
         content=blob, media_type=DOCX_MIME,
         headers={"Content-Disposition": 'attachment; filename="rewrite.docx"'},
     )
+
+
+class OrderReq(BaseModel):
+    plan: str
+
+
+@app.post("/api/order/create")
+def order_create(req: OrderReq, request: Request):
+    if req.plan not in pay.PLANS:
+        return JSONResponse({"error": "套餐非法"}, status_code=400)
+    plan = pay.PLANS[req.plan]
+    cid = request.state.cid
+    order_id = "JZ" + secrets.token_hex(8).upper()
+    quota.create_order_record(order_id, cid, req.plan)
+    base = str(request.base_url).rstrip("/")
+    notify_url = base + "/api/order/notify"
+    return_url = base + "/"
+    if not pay.configured():
+        summary = quota.activate(cid, plan["seconds"])
+        quota.mark_order_paid(order_id)
+        return {"test": True, "message": "测试模式：已直接开通（未配置虎皮椒，无真实付款）",
+                "quota": summary}
+    try:
+        res = pay.create_order(order_id, plan["price"], f"降重工具 {plan['name']}", notify_url, return_url)
+        if res.get("errcode") != 0:
+            return JSONResponse({"error": f"虎皮椒下单失败: {res.get('errmsg')}"}, status_code=502)
+        return {"order_id": order_id, "pay_url": res.get("url") or res.get("url_qrcode")}
+    except Exception as e:
+        return JSONResponse({"error": f"支付接口错误: {type(e).__name__}: {e}"}, status_code=502)
+
+
+@app.post("/api/order/notify")
+async def order_notify(request: Request):
+    form = await request.form()
+    params = {k: str(v) for k, v in form.items()}
+    if not pay.verify_notify(params):
+        return Response(content="fail", media_type="text/plain")
+    if params.get("status") == "OD":
+        res = quota.mark_order_paid(params.get("trade_order_id", ""))
+        if res:
+            cid, plan = res
+            quota.activate(cid, pay.PLANS[plan]["seconds"])
+    return Response(content="success", media_type="text/plain")
+
+
+@app.get("/api/order/status")
+def order_status(order_id: str, request: Request):
+    o = quota.get_order(order_id)
+    if not o:
+        return JSONResponse({"error": "订单不存在"}, status_code=404)
+    return {"status": o["status"], "paid": o["status"] == "paid",
+            "quota": quota.get_state_summary(request.state.cid)}

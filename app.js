@@ -120,6 +120,54 @@ $("redeem-btn").addEventListener("click", async () => {
 
 fetchQuota();
 
+// ── 购买时长（站内支付）─────────────────────────────────────────────────
+$("buy-btn").addEventListener("click", () => {
+  $("buy-panel").hidden = !$("buy-panel").hidden;
+  $("buy-status").textContent = "";
+});
+
+document.querySelectorAll(".plan-btn").forEach((btn) => {
+  btn.addEventListener("click", async () => {
+    const plan = btn.dataset.plan;
+    const status = $("buy-status");
+    document.querySelectorAll(".plan-btn").forEach((b) => (b.disabled = true));
+    status.textContent = "正在创建订单…";
+    try {
+      const r = await fetch("/api/order/create", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ plan }),
+      });
+      const data = await r.json();
+      if (!r.ok) { status.textContent = "❌ " + (data.error || "下单失败"); return; }
+      if (data.test) {
+        if (data.quota) setQuota(data.quota);
+        status.textContent = "✅ 测试模式：已直接开通";
+        setTimeout(() => { $("buy-panel").hidden = true; }, 1500);
+        return;
+      }
+      if (data.pay_url) window.open(data.pay_url, "_blank");
+      status.textContent = "支付页面已打开，完成支付后这里自动开通…";
+      const oid = data.order_id;
+      for (let i = 0; i < 90; i++) {
+        await new Promise((r) => setTimeout(r, 2000));
+        const sr = await fetch(`/api/order/status?order_id=${oid}`);
+        const sd = await sr.json();
+        if (sd.paid) {
+          if (sd.quota) setQuota(sd.quota);
+          status.textContent = "✅ 开通成功！可以用了";
+          setTimeout(() => { $("buy-panel").hidden = true; }, 2000);
+          return;
+        }
+      }
+      status.textContent = "未检测到支付，如已付款请联系客服";
+    } catch (e) {
+      status.textContent = "❌ " + (e.message || String(e));
+    } finally {
+      document.querySelectorAll(".plan-btn").forEach((b) => (b.disabled = false));
+    }
+  });
+});
+
 // ── text utilities ───────────────────────────────────────────────────────
 function bigrams(s) {
   s = s.replace(/\s+/g, "");

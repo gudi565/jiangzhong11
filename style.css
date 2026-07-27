@@ -123,6 +123,15 @@ body {
 }
 .quota-redeem input:focus { border-color: var(--accent); box-shadow: 0 0 0 3px rgba(0,122,255,.18); }
 
+/* ===== 购买面板（站内支付）===== */
+.buy-panel { margin-bottom: 18px; padding: 14px; background: rgba(255,255,255,0.5); backdrop-filter: var(--blur-sm); -webkit-backdrop-filter: var(--blur-sm); border: 1px solid var(--glass-border); border-radius: 14px; display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+.plan-btn { flex: 1; min-width: 96px; cursor: pointer; background: rgba(255,255,255,0.65); border: 1px solid var(--glass-border); border-radius: 12px; padding: 12px; display: flex; flex-direction: column; align-items: center; gap: 4px; transition: transform .1s, box-shadow .15s; }
+.plan-btn:hover:not(:disabled) { transform: translateY(-2px); box-shadow: 0 4px 14px rgba(31,38,135,.10); }
+.plan-btn:disabled { opacity: .5; cursor: not-allowed; }
+.plan-name { font-size: 14px; font-weight: 700; color: var(--accent-ink); }
+.plan-price { font-size: 18px; font-weight: 800; color: var(--accent); }
+.buy-status { width: 100%; text-align: center; font-size: 13px; color: var(--muted); padding: 4px 0; min-height: 18px; }
+
 /* ===== textarea ===== */
 textarea#input {
   width: 100%; min-height: 210px; resize: vertical;

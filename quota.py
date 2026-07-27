@@ -105,3 +105,44 @@ def gen_codes(n: int, seconds: int) -> list:
             codes.append(code)
         _save(s)
     return codes
+
+
+def activate(cid: str, seconds: int) -> dict:
+    """直接给客户端加时长（不走兑换码，用于支付成功开通）。"""
+    with _lock:
+        s = _load()
+        c = _client(s, cid)
+        base = max(c.get("expires_at", 0), time.time())
+        c["expires_at"] = base + seconds
+        exp = c["expires_at"]
+        _save(s)
+        return {"active": exp > time.time(), "expires_at": exp,
+                "remaining_seconds": max(0, int(exp - time.time()))}
+
+
+def create_order_record(order_id: str, cid: str, plan: str) -> None:
+    with _lock:
+        s = _load()
+        s.setdefault("orders", {})[order_id] = {
+            "cid": cid, "plan": plan, "status": "pending", "time": time.time(),
+        }
+        _save(s)
+
+
+def mark_order_paid(order_id: str):
+    """首次标记已支付返回 (cid, plan)；已处理/不存在返回 None（防重复回调）。"""
+    with _lock:
+        s = _load()
+        o = s.get("orders", {}).get(order_id)
+        if not o or o.get("status") == "paid":
+            return None
+        o["status"] = "paid"
+        cid, plan = o["cid"], o["plan"]
+        _save(s)
+        return cid, plan
+
+
+def get_order(order_id: str) -> dict:
+    with _lock:
+        s = _load()
+        return s.get("orders", {}).get(order_id)
