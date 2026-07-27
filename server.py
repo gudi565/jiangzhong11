@@ -14,7 +14,7 @@ import detectors
 
 BASE_DIR = Path(__file__).parent
 MAX_CHARS = engine.MAX_CHARS
-FILE_MAX_CHARS = 12000
+FILE_MAX_CHARS = 20000
 
 DOCX_MIME = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
 

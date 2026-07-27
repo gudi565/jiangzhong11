@@ -28,7 +28,7 @@ def _load_key() -> str:
 KEY = _load_key()
 ENDPOINT = "https://open.bigmodel.cn/api/paas/v4/chat/completions"
 MODEL = "glm-4-flash"
-MAX_CHARS = 8000
+MAX_CHARS = 20000
 
 SYSTEM = (
     "你是一名资深中文学术编辑，专门做「降重改写」：在严格保留原文含义、数据、引用、逻辑的前提下，"
@@ -75,10 +75,10 @@ def chat(messages, temperature=0.7) -> str:
     }).encode("utf-8")
     last_err = None
     start = time.time()
-    for attempt in range(3):  # 单次 GLM 调用总预算 ~20s：短超时 + 快重试，碰到慢窗口快速放弃重试
-        if time.time() - start > 20:
+    for attempt in range(3):  # 单次 GLM 调用总预算 ~30s：大文本生成需要更久，放宽超时
+        if time.time() - start > 30:
             break
-        timeout = max(6, min(10, 20 - (time.time() - start)))
+        timeout = max(8, min(15, 30 - (time.time() - start)))
         req = urllib.request.Request(
             ENDPOINT, data=body,
             headers={"Authorization": f"Bearer {KEY}", "Content-Type": "application/json"},
@@ -122,7 +122,7 @@ def similarity(a: str, b: str) -> float:
     return len(A & B) / len(A | B)
 
 
-def chunk_paragraphs(text: str, max_len: int = 1500) -> list:
+def chunk_paragraphs(text: str, max_len: int = 4000) -> list:
     paras = [p.strip() for p in re.split(r"\n\s*\n", text) if p.strip()]
     blocks = []
     for p in paras:
@@ -359,7 +359,7 @@ def rewrite_pipeline(text: str, strength: str, discipline: str = "auto") -> dict
     blocks = chunk_paragraphs(text)
     # 跳过单独的分类调用以提速；段落类型感知由 system prompt + discipline overlay 承担
     labels = ["general"] * len(blocks)
-    with ThreadPoolExecutor(max_workers=min(4, len(blocks))) as ex:
+    with ThreadPoolExecutor(max_workers=min(2, len(blocks))) as ex:
         futures = [ex.submit(process_block, b, strength, labels[i], discipline) for i, b in enumerate(blocks)]
         results = [f.result() for f in futures]
 

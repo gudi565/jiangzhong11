@@ -144,12 +144,16 @@ function renderText(el, text, highlightAgainst) {
   el.innerHTML = "";
   if (highlightAgainst === undefined) { el.append(text); return; }
   const origSents = splitSentences(highlightAgainst);
-  for (const s of splitSentences(text)) {
+  const newSents = splitSentences(text);
+  const doHighlight = origSents.length <= 50 && newSents.length <= 50;  // 大文本跳过逐句高亮，避免渲染卡顿
+  for (const s of newSents) {
     const span = document.createElement("span");
     span.className = "sentence";
     span.textContent = s;
-    const best = origSents.length ? Math.max(...origSents.map((o) => sim(s, o))) : 0;
-    if (best < 0.55) span.classList.add("hot");
+    if (doHighlight) {
+      const best = origSents.length ? Math.max(...origSents.map((o) => sim(s, o))) : 0;
+      if (best < 0.55) span.classList.add("hot");
+    }
     el.appendChild(span);
   }
 }
@@ -315,7 +319,7 @@ $("go").addEventListener("click", async () => {
     payload = { text, strength, mode: $("pipe").checked ? "pipeline" : "simple", discipline: $("discipline").value };
   }
   btn.disabled = true;
-  btn.textContent = goLabel + "中…";
+  btn.textContent = goLabel + "中…" + (text.length > 10000 ? "（长文约 15-30 秒）" : "");
   busy = true; document.querySelector('.tabs').classList.add('locked');
   const slowTimer = setTimeout(() => { btn.textContent = goLabel + "中… AI 偶尔会慢，马上好"; }, 6000);
   try {
