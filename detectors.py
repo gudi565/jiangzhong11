@@ -55,32 +55,37 @@ def check_plagiarism(text: str, max_checks: int = 8) -> dict:
 
     matches = []
     checked = 0
-    try:
-        ddgs = DDGS()
-        for s in candidates:
-            q = re.sub(r"\s+", " ", s).strip()[:70]
-            if len(q) < 8:
-                continue
-            checked += 1
+    any_success = False
+    for s in candidates:
+        q = re.sub(r"\s+", " ", s).strip()[:70]
+        if len(q) < 8:
+            continue
+        checked += 1
+        # 每次新建 DDGS + 重试 3 次，规避 DDG 偶发连接错误（如 h11 的 0x304）
+        results = []
+        for _ in range(3):
             try:
-                results = list(ddgs.text(q, max_results=3))
+                results = list(DDGS().text(q, max_results=3))
+                any_success = True
+                break
             except Exception:
                 results = []
-            best = None
-            for r in results:
-                blob = " ".join([r.get("title", ""), r.get("body", ""), r.get("snippet", "")]).strip()
-                ov = _containment(s, blob)
-                if best is None or ov > best[0]:
-                    best = (ov, r)
-            if best and best[0] >= 0.5:
-                matches.append({
-                    "sentence": s,
-                    "overlap": round(best[0] * 100),
-                    "title": (best[1].get("title", "") or "")[:80],
-                    "url": best[1].get("href") or best[1].get("url") or "",
-                })
-    except Exception as e:
-        return {"error": f"搜索暂不可用：{type(e).__name__}: {e}"}
+        best = None
+        for r in results:
+            blob = " ".join([r.get("title", ""), r.get("body", ""), r.get("snippet", "")]).strip()
+            ov = _containment(s, blob)
+            if best is None or ov > best[0]:
+                best = (ov, r)
+        if best and best[0] >= 0.5:
+            matches.append({
+                "sentence": s,
+                "overlap": round(best[0] * 100),
+                "title": (best[1].get("title", "") or "")[:80],
+                "url": best[1].get("href") or best[1].get("url") or "",
+            })
+
+    if checked > 0 and not any_success:
+        return {"error": "搜索服务暂时不可用，请稍后重试"}
 
     score = round(len(matches) / max(checked, 1) * 100)
     if score < 20:

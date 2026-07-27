@@ -20,7 +20,7 @@ DOCX_MIME = "application/vnd.openxmlformats-officedocument.wordprocessingml.docu
 
 
 class RewriteReq(BaseModel):
-    text: str = Field(..., min_length=1)
+    text: str = Field(...)
     strength: str = "medium"
     mode: str = "pipeline"
     discipline: str = "auto"
@@ -64,6 +64,15 @@ def _validate_opts(strength, mode, discipline):
     if discipline not in engine.DISCIPLINE_INSTR:
         return "discipline 非法"
     return None
+
+
+def _engine_err(e: Exception):
+    """GLM/网络故障 → 502 + 干净中文；其它异常 → 500（traceback 落日志便于排障）。"""
+    msg = str(e)
+    if any(k in msg for k in ("网络", "超时", "GLM", "timed out", "HTTP 4", "HTTP 5", "空内容", "响应结构")):
+        return JSONResponse({"error": "AI 服务暂时不可用，请稍后重试"}, status_code=502)
+    traceback.print_exc()
+    return JSONResponse({"error": f"{type(e).__name__}: {e}"}, status_code=500)
 
 
 @app.get("/")
@@ -134,12 +143,11 @@ def rewrite(req: RewriteReq, request: Request):
         data["quota"] = quota.get_state_summary(request.state.cid)
         return data
     except Exception as e:
-        traceback.print_exc()
-        return JSONResponse({"error": f"{type(e).__name__}: {e}"}, status_code=500)
+        return _engine_err(e)
 
 
 class HumanizeReq(BaseModel):
-    text: str = Field(..., min_length=1)
+    text: str = Field(...)
     strength: str = "medium"
 
 
@@ -166,12 +174,11 @@ def humanize(req: HumanizeReq, request: Request):
         data["quota"] = quota.get_state_summary(request.state.cid)
         return data
     except Exception as e:
-        traceback.print_exc()
-        return JSONResponse({"error": f"{type(e).__name__}: {e}"}, status_code=500)
+        return _engine_err(e)
 
 
 class EnglishReq(BaseModel):
-    text: str = Field(..., min_length=1)
+    text: str = Field(...)
     strength: str = "medium"
     sub: str = "polish"
 
@@ -182,11 +189,13 @@ def edit_english(req: EnglishReq, request: Request):
         return JSONResponse({"error": "未配置 ZHIPU_API_KEY"}, status_code=500)
     text = req.text.strip()
     if len(text) < 10:
-        return JSONResponse({"error": "Text too short (min 10 chars)"}, status_code=400)
+        return JSONResponse({"error": "文本太短，请至少输入 10 个字"}, status_code=400)
     if len(text) > MAX_CHARS:
-        return JSONResponse({"error": f"Text too long (>{MAX_CHARS} chars)"}, status_code=413)
+        return JSONResponse({"error": f"文本过长（>{MAX_CHARS} 字），请分段处理"}, status_code=413)
     if req.strength not in engine.STRENGTH_INSTR:
-        return JSONResponse({"error": "strength must be light / medium / deep"}, status_code=400)
+        return JSONResponse({"error": "strength 必须是 light / medium / deep"}, status_code=400)
+    if req.sub not in ("polish", "dedup", "translate"):
+        return JSONResponse({"error": "sub 必须是 polish / dedup / translate"}, status_code=400)
     active, _ = quota.is_active(request.state.cid)
     if not active:
         return JSONResponse(
@@ -199,12 +208,11 @@ def edit_english(req: EnglishReq, request: Request):
         data["quota"] = quota.get_state_summary(request.state.cid)
         return data
     except Exception as e:
-        traceback.print_exc()
-        return JSONResponse({"error": f"{type(e).__name__}: {e}"}, status_code=500)
+        return _engine_err(e)
 
 
 class CheckReq(BaseModel):
-    text: str = Field(..., min_length=1)
+    text: str = Field(...)
 
 
 @app.post("/api/aigc-check")
@@ -238,7 +246,7 @@ def plagiarism_check(req: CheckReq, request: Request):
         )
     data = detectors.check_plagiarism(text)
     if "error" in data:
-        return JSONResponse(data, status_code=500)
+        return JSONResponse(data, status_code=502)
     data["quota"] = quota.get_state_summary(request.state.cid)
     return data
 
@@ -257,6 +265,8 @@ async def rewrite_file(
         return JSONResponse({"error": "未配置 ZHIPU_API_KEY"}, status_code=500)
     if not (file.filename or "").lower().endswith(".docx"):
         return JSONResponse({"error": "只支持 .docx 文件"}, status_code=400)
+    if task not in ("rewrite", "humanize", "english"):
+        return JSONResponse({"error": "task 非法"}, status_code=400)
     err = _validate_opts(strength, mode, discipline)
     if err:
         return JSONResponse({"error": err}, status_code=400)
@@ -291,12 +301,18 @@ async def rewrite_file(
         data["quota"] = quota.get_state_summary(request.state.cid)
         return data
     except Exception as e:
-        traceback.print_exc()
-        return JSONResponse({"error": f"{type(e).__name__}: {e}"}, status_code=500)
+        return _engine_err(e)
 
 
 @app.post("/api/make-docx")
-def make_docx(req: DocReq):
+def make_docx(req: DocReq, request: Request):
+    active, _ = quota.is_active(request.state.cid)
+    if not active:
+        return JSONResponse(
+            {"error": "未激活或已到期，请输入兑换码（淘宝购买）。",
+             "quota": quota.get_state_summary(request.state.cid)},
+            status_code=402,
+        )
     paras = [p.strip() for p in (req.text or "").split("\n\n") if p.strip()]
     if not paras:
         return JSONResponse({"error": "没有可导出的文本"}, status_code=400)
