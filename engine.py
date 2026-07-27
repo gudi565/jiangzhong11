@@ -74,23 +74,27 @@ def chat(messages, temperature=0.7) -> str:
         "temperature": temperature, "top_p": 0.85,
     }).encode("utf-8")
     last_err = None
-    for attempt in range(4):  # GLM 从海外连时偶发超时，多重试几次提高成功率
+    start = time.time()
+    for attempt in range(3):  # 单次 GLM 调用总预算 ~20s：短超时 + 快重试，碰到慢窗口快速放弃重试
+        if time.time() - start > 20:
+            break
+        timeout = max(6, min(10, 20 - (time.time() - start)))
         req = urllib.request.Request(
             ENDPOINT, data=body,
             headers={"Authorization": f"Bearer {KEY}", "Content-Type": "application/json"},
         )
         try:
-            with urllib.request.urlopen(req, timeout=20) as resp:
+            with urllib.request.urlopen(req, timeout=timeout) as resp:
                 data = json.loads(resp.read())
         except urllib.error.HTTPError as e:
             last_err = RuntimeError(f"GLM HTTP {e.code}: {e.read()[:200]!r}")
-            if e.code in (429, 500, 502, 503, 504) and attempt < 3:  # 退避重试
-                time.sleep(1.0 + attempt * 0.5); continue
+            if e.code in (429, 500, 502, 503, 504) and attempt < 2:  # 退避重试
+                time.sleep(0.8); continue
             raise last_err
         except OSError as e:  # 含 socket.timeout（3.9 里不是 TimeoutError，必须用 OSError 接）
             last_err = RuntimeError(f"网络/超时: {e}")
-            if attempt < 3:
-                time.sleep(1.0 + attempt * 0.5); continue
+            if attempt < 2:
+                time.sleep(0.8); continue
             raise last_err
         try:
             content = data["choices"][0]["message"]["content"]
@@ -355,7 +359,7 @@ def rewrite_pipeline(text: str, strength: str, discipline: str = "auto") -> dict
     blocks = chunk_paragraphs(text)
     # 跳过单独的分类调用以提速；段落类型感知由 system prompt + discipline overlay 承担
     labels = ["general"] * len(blocks)
-    with ThreadPoolExecutor(max_workers=min(2, len(blocks))) as ex:
+    with ThreadPoolExecutor(max_workers=min(4, len(blocks))) as ex:
         futures = [ex.submit(process_block, b, strength, labels[i], discipline) for i, b in enumerate(blocks)]
         results = [f.result() for f in futures]
 

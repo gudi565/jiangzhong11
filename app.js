@@ -312,6 +312,7 @@ $("go").addEventListener("click", async () => {
   }
   btn.disabled = true;
   btn.textContent = goLabel + "中…";
+  const slowTimer = setTimeout(() => { btn.textContent = goLabel + "中… AI 偶尔会慢，马上好"; }, 6000);
   try {
     const r = await fetch(endpoint, {
       method: "POST",
@@ -330,6 +331,7 @@ $("go").addEventListener("click", async () => {
   } catch (e) {
     showError(e.message || String(e));
   } finally {
+    clearTimeout(slowTimer);
     btn.disabled = false;
     btn.textContent = goLabel;
   }
