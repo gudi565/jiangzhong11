@@ -3,3 +3,7 @@ uvicorn[standard]
 python-multipart
 python-docx
 duckduckgo-search
+python-alipay-sdk
+pycryptodome
+qrcode
+pillow

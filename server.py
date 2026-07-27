@@ -349,10 +349,9 @@ def order_create(req: OrderReq, request: Request):
         return {"test": True, "message": "测试模式：已直接开通（未配置虎皮椒，无真实付款）",
                 "quota": summary}
     try:
-        res = pay.create_order(order_id, plan["price"], f"降重工具 {plan['name']}", notify_url, return_url)
-        if res.get("errcode") != 0:
-            return JSONResponse({"error": f"虎皮椒下单失败: {res.get('errmsg')}"}, status_code=502)
-        return {"order_id": order_id, "pay_url": res.get("url") or res.get("url_qrcode")}
+        res = pay.create_order(order_id, plan["price"], f"降重工具 {plan['name']}", notify_url)
+        qr_image = pay.gen_qr_base64(res["qr_code"])
+        return {"order_id": order_id, "qr_image": qr_image, "qr_url": res["qr_code"]}
     except Exception as e:
         return JSONResponse({"error": f"支付接口错误: {type(e).__name__}: {e}"}, status_code=502)
 
@@ -363,8 +362,8 @@ async def order_notify(request: Request):
     params = {k: str(v) for k, v in form.items()}
     if not pay.verify_notify(params):
         return Response(content="fail", media_type="text/plain")
-    if params.get("status") == "OD":
-        res = quota.mark_order_paid(params.get("trade_order_id", ""))
+    if params.get("trade_status") == "TRADE_SUCCESS":
+        res = quota.mark_order_paid(params.get("out_trade_no", ""))
         if res:
             cid, plan = res
             quota.activate(cid, pay.PLANS[plan]["seconds"])

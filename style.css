@@ -131,6 +131,10 @@ body {
 .plan-name { font-size: 14px; font-weight: 700; color: var(--accent-ink); }
 .plan-price { font-size: 18px; font-weight: 800; color: var(--accent); }
 .buy-status { width: 100%; text-align: center; font-size: 13px; color: var(--muted); padding: 4px 0; min-height: 18px; }
+.pay-qr { width: 200px; height: 200px; display: block; margin: 8px auto; border-radius: 12px; border: 1px solid var(--glass-border); }
+.pay-link { display: block; color: var(--accent); font-size: 13px; font-weight: 600; text-decoration: none; margin: 4px 0; }
+.pay-link:hover { text-decoration: underline; }
+.pay-hint { font-size: 12px; color: var(--faint); margin-top: 4px; }
 
 /* ===== textarea ===== */
 textarea#input {
