@@ -101,6 +101,9 @@ body {
 @media (max-width: 560px) { .tab { font-size: 12.5px; padding: 8px 4px; } .tab .soon { display: none; } }
 
 /* ===== quota / status banner ===== */
+.tabs.locked { opacity: .5; }
+.tabs.locked .tab { pointer-events: none; cursor: not-allowed; }
+
 .quota-bar {
   display: flex; align-items: center; justify-content: space-between; gap: 14px;
   padding: 12px 16px; margin-bottom: 20px; flex-wrap: wrap;

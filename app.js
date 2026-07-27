@@ -33,10 +33,12 @@ $("english-mode").addEventListener("click", (e) => {
 });
 
 let task = "rewrite";
+let busy = false;
 const TASK_LABELS = { rewrite: "改写", humanize: "降 AIGC", english: "英文修改", aigc: "查 AIGC 率", plagiarism: "查重" };
 document.querySelector(".tabs").addEventListener("click", (e) => {
   const t = e.target.closest(".tab");
   if (!t || t.disabled) return;
+  if (busy) return;  // 操作进行中不允许切 tab，避免按钮状态/结果串台
   document.querySelectorAll(".tab").forEach((x) => x.classList.remove("active"));
   t.classList.add("active");
   task = t.dataset.task;
@@ -245,6 +247,7 @@ $("file").addEventListener("change", async (e) => {
   const btn = $("go");
   const goLabel = task === "humanize" ? "降 AIGC" : (task === "english" ? "英文修改" : "改写");
   btn.disabled = true; btn.textContent = "上传处理中…";
+  busy = true; document.querySelector('.tabs').classList.add('locked');
   try {
     const fd = new FormData();
     fd.append("file", f);
@@ -264,6 +267,7 @@ $("file").addEventListener("change", async (e) => {
   } catch (e) {
     showError(e.message || String(e));
   } finally {
+    busy = false; document.querySelector('.tabs').classList.remove('locked');
     btn.disabled = false; btn.textContent = goLabel;
     e.target.value = "";
   }
@@ -312,6 +316,7 @@ $("go").addEventListener("click", async () => {
   }
   btn.disabled = true;
   btn.textContent = goLabel + "中…";
+  busy = true; document.querySelector('.tabs').classList.add('locked');
   const slowTimer = setTimeout(() => { btn.textContent = goLabel + "中… AI 偶尔会慢，马上好"; }, 6000);
   try {
     const r = await fetch(endpoint, {
@@ -332,6 +337,7 @@ $("go").addEventListener("click", async () => {
     showError(e.message || String(e));
   } finally {
     clearTimeout(slowTimer);
+    busy = false; document.querySelector('.tabs').classList.remove('locked');
     btn.disabled = false;
     btn.textContent = goLabel;
   }
