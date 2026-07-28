@@ -1,4 +1,5 @@
 """降重 web service — FastAPI over engine.py + docx I/O + time-based quota."""
+import time
 import secrets
 import traceback
 from pathlib import Path
@@ -52,6 +53,12 @@ async def cid_middleware(request: Request, call_next):
     cid = (request.headers.get("x-client-id") or request.cookies.get("jz_cid")
            or quota.new_client_id())
     request.state.cid = cid
+    _EXPENSIVE = {"/api/rewrite", "/api/humanize", "/api/edit-english",
+                  "/api/plagiarism-check", "/api/rewrite-file"}
+    if request.url.path in _EXPENSIVE and request.method == "POST":
+        rl = _rate_check(request)
+        if rl:
+            return rl
     response = await call_next(request)
     if not (request.headers.get("x-client-id") or request.cookies.get("jz_cid")):
         response.set_cookie("jz_cid", cid, httponly=True, max_age=31536000, samesite="lax")
@@ -75,6 +82,23 @@ def _engine_err(e: Exception):
         return JSONResponse({"error": "AI 服务暂时不可用，请稍后重试"}, status_code=502)
     traceback.print_exc()
     return JSONResponse({"error": f"{type(e).__name__}: {e}"}, status_code=500)
+
+
+# ── 请求频率限制（防 DoS / 防 GLM 额度被刷）────────────────────────────────
+_rate_log = {}  # cid -> [timestamps]
+
+def _rate_check(request, limit=15, window=60):
+    """每客户端 window 秒内最多 limit 次昂贵请求。超限返回 429。"""
+    cid = request.state.cid
+    now = time.time()
+    recent = [t for t in _rate_log.get(cid, []) if now - t < window]
+    if len(recent) >= limit:
+        return JSONResponse({"error": "请求过于频繁，请稍后再试"}, status_code=429)
+    recent.append(now)
+    _rate_log[cid] = recent
+    if len(_rate_log) > 5000:
+        _rate_log.clear()
+    return None
 
 
 @app.get("/")
@@ -272,6 +296,9 @@ async def rewrite_file(
     err = _validate_opts(strength, mode, discipline)
     if err:
         return JSONResponse({"error": err}, status_code=400)
+    cl = request.headers.get("content-length")
+    if cl and int(cl) > 10 * 1024 * 1024:
+        return JSONResponse({"error": "文件过大（>10MB）"}, status_code=413)
     raw = await file.read()
     try:
         paras = docx_io.extract_paragraphs(raw)
@@ -344,6 +371,9 @@ def order_create(req: OrderReq, request: Request):
     notify_url = base + "/api/order/notify"
     return_url = base + "/"
     if not pay.configured():
+        is_local = "localhost" in str(request.base_url) or "127.0.0.1" in str(request.base_url)
+        if not is_local:
+            return JSONResponse({"error": "在线支付暂未配置，请使用兑换码"}, status_code=503)
         summary = quota.activate(cid, plan["seconds"])
         quota.mark_order_paid(order_id)
         return {"test": True, "message": "测试模式：已直接开通（未配置虎皮椒，无真实付款）",
