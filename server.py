@@ -14,6 +14,7 @@ import docx_io
 import quota
 import detectors
 import pay
+import wechatpay
 
 BASE_DIR = Path(__file__).parent
 MAX_CHARS = engine.MAX_CHARS
@@ -369,31 +370,67 @@ def order_create(req: OrderReq, request: Request):
     quota.create_order_record(order_id, cid, req.plan)
     base = str(request.base_url).rstrip("/")
     notify_url = base + "/api/order/notify"
-    return_url = base + "/"
-    if not pay.configured():
-        is_local = "localhost" in str(request.base_url) or "127.0.0.1" in str(request.base_url)
-        if not is_local:
-            return JSONResponse({"error": "在线支付暂未配置，请使用兑换码"}, status_code=503)
-        summary = quota.activate(cid, plan["seconds"])
-        quota.mark_order_paid(order_id)
-        return {"test": True, "message": "测试模式：已直接开通（未配置虎皮椒，无真实付款）",
-                "quota": summary}
-    try:
-        res = pay.create_order(order_id, plan["price"], f"降重工具 {plan['name']}", notify_url)
-        qr_image = pay.gen_qr_base64(res["qr_code"])
-        return {"order_id": order_id, "qr_image": qr_image, "qr_url": res["qr_code"]}
-    except Exception as e:
-        return JSONResponse({"error": f"支付接口错误: {type(e).__name__}: {e}"}, status_code=502)
+
+    # ① 微信支付 v3 Native（优先）
+    if wechatpay.configured():
+        try:
+            code_url = wechatpay.create_order(order_id, int(float(plan["price"]) * 100),
+                                              f"降重工具 {plan['name']}", notify_url)
+            import qrcode as _qr, io as _io, base64 as _b64
+            img = _qr.make(code_url)
+            buf = _io.BytesIO(); img.save(buf, format="PNG")
+            qr = "data:image/png;base64," + _b64.b64encode(buf.getvalue()).decode()
+            return {"order_id": order_id, "qr_image": qr, "qr_url": code_url}
+        except Exception as e:
+            return JSONResponse({"error": f"微信支付下单失败: {e}"}, status_code=502)
+
+    # ② 虎皮椒免签（备选）
+    if pay.configured():
+        try:
+            res = pay.create_order(order_id, plan["price"], f"降重工具 {plan['name']}", notify_url, base + "/")
+            if res.get("errcode") != 0:
+                return JSONResponse({"error": f"虎皮椒下单失败: {res.get('errmsg')}"}, status_code=502)
+            return {"order_id": order_id, "pay_url": res.get("url") or res.get("url_qrcode"), "method": "xunhupay"}
+        except Exception as e:
+            return JSONResponse({"error": f"支付接口错误: {e}"}, status_code=502)
+
+    # ③ 测试模式（仅 localhost，生产环境返 503 防白嫖）
+    is_local = "localhost" in str(request.base_url) or "127.0.0.1" in str(request.base_url)
+    if not is_local:
+        return JSONResponse({"error": "在线支付暂未配置，请使用兑换码"}, status_code=503)
+    summary = quota.activate(cid, plan["seconds"])
+    quota.mark_order_paid(order_id)
+    return {"test": True, "message": "测试模式", "quota": summary}
 
 
 @app.post("/api/order/notify")
 async def order_notify(request: Request):
+    # 微信支付 v3 回调（JSON body + RSA 签名验证）
+    if wechatpay.configured():
+        body_bytes = await request.body()
+        headers = {k: v for k, v in request.headers.items()}
+        try:
+            result = wechatpay.handle_notify(headers, body_bytes)
+        except Exception:
+            result = None
+        if result and result.get("event_type") == "TRANSACTION.SUCCESS":
+            resource = result.get("resource") or result.get("decrypt") or {}
+            if isinstance(resource, str):
+                resource = json.loads(resource)
+            trade_no = resource.get("out_trade_no", "")
+            res = quota.mark_order_paid(trade_no)
+            if res:
+                cid, plan = res
+                quota.activate(cid, pay.PLANS[plan]["seconds"])
+        return JSONResponse({"code": "SUCCESS", "message": "成功"})
+
+    # 虎皮椒回调（form-data + MD5 hash 验签）
     form = await request.form()
     params = {k: str(v) for k, v in form.items()}
     if not pay.verify_notify(params):
         return Response(content="fail", media_type="text/plain")
-    if params.get("trade_status") == "TRADE_SUCCESS":
-        res = quota.mark_order_paid(params.get("out_trade_no", ""))
+    if params.get("status") == "OD":
+        res = quota.mark_order_paid(params.get("trade_order_id", ""))
         if res:
             cid, plan = res
             quota.activate(cid, pay.PLANS[plan]["seconds"])

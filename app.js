@@ -148,7 +148,7 @@ document.querySelectorAll(".plan-btn").forEach((btn) => {
       if (data.qr_image) {
         status.innerHTML = '<img src="' + data.qr_image + '" class="pay-qr" />'
           + '<a href="' + data.qr_url + '" target="_blank" class="pay-link">手机用户点此支付 →</a>'
-          + '<div class="pay-hint">用支付宝扫码支付，完成后自动开通</div>';
+          + '<div class="pay-hint">用微信扫码支付，完成后自动开通</div>';
       } else {
         status.textContent = "订单创建失败";
       }
