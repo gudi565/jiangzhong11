@@ -14,13 +14,27 @@ MCHID = os.environ.get("WECHAT_MCHID", "")
 APPID = os.environ.get("WECHAT_APPID", "")
 APIV3_KEY = os.environ.get("WECHAT_APIV3_KEY", "")
 CERT_SERIAL = os.environ.get("WECHAT_CERT_SERIAL", "")
+PRIVATE_KEY_B64 = os.environ.get("WECHAT_PRIVATE_KEY_B64", "")
 PRIVATE_KEY_PATH = os.environ.get("WECHAT_PRIVATE_KEY_PATH", "/opt/jiangzhong/cert/apiclient_key.pem")
 
 _wxpay = None
 
 
 def configured() -> bool:
-    return bool(MCHID and APPID and APIV3_KEY and CERT_SERIAL)
+    return bool(MCHID and APPID and APIV3_KEY and CERT_SERIAL and (PRIVATE_KEY_B64 or PRIVATE_KEY_PATH))
+
+
+def _resolve_key_path():
+    """从 base64 环境变量还原私钥到临时文件，或直接用文件路径。"""
+    if PRIVATE_KEY_B64:
+        import base64
+        content = base64.b64decode(PRIVATE_KEY_B64).decode("utf-8")
+        path = "/tmp/apiclient_key.pem"
+        with open(path, "w") as f:
+            f.write(content)
+        os.chmod(path, 0o600)
+        return path
+    return PRIVATE_KEY_PATH
 
 
 def _get(notify_url: str = ""):
@@ -30,7 +44,7 @@ def _get(notify_url: str = ""):
         _wxpay = WeChatPay(
             wechatpay_type=WeChatPayType.NATIVE,
             mchid=MCHID,
-            private_key=PRIVATE_KEY_PATH,
+            private_key=_resolve_key_path(),
             cert_serial_no=CERT_SERIAL,
             apiv3_key=APIV3_KEY,
             appid=APPID,
