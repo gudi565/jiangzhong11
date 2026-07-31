@@ -254,9 +254,59 @@ def aigc_check(req: CheckReq, request: Request):
              "quota": quota.get_state_summary(request.state.cid)},
             status_code=402,
         )
-    data = detectors.detect_aigc(text)
-    data["quota"] = quota.get_state_summary(request.state.cid)
-    return data
+    # ① 启发式统计（辅助，30%）
+    heu = detectors.detect_aigc(text)
+    heu_score = heu["aigc_score"]
+    # ② GLM 判断（主力，70%）— AI 最懂 AI 写的文字
+    glm_score = heu_score
+    glm_reason = ""
+    if len(text) >= 20:
+        try:
+            glm_score, glm_reason = _glm_aigc_judge(text)
+        except Exception:
+            glm_reason = "GLM 判断暂时不可用"
+    # ③ 混合
+    if glm_reason and "不可用" not in glm_reason:
+        final = round(glm_score * 0.7 + heu_score * 0.3)
+    else:
+        final = heu_score
+    final = max(3, min(97, final))
+    if final < 35:
+        verdict, color = "偏低（偏人类写作）", "ok"
+    elif final < 65:
+        verdict, color = "中等（不确定）", "warn"
+    else:
+        verdict, color = "偏高（偏 AI 生成）", "err"
+    heu["aigc_score"] = final
+    heu["verdict"] = verdict
+    heu["color"] = color
+    if glm_reason:
+        heu["signals"].append({"name": "GLM 判断", "value": f"{glm_score}%",
+                               "score": glm_score, "hint": glm_reason})
+    heu["note"] = glm_reason and f"AI模型判断（70%）+ 统计分析（30%）。{glm_reason}" or heu["note"]
+    heu["quota"] = quota.get_state_summary(request.state.cid)
+    return heu
+
+
+def _glm_aigc_judge(text):
+    """让 GLM 判断文本是否 AI 生成，返回 (score, reason)。"""
+    prompt = (
+        "你是AI文本检测专家。分析以下中文文本是否由AI生成。\n"
+        "从句式工整度、词汇书面化、模板连接词频率、逻辑线性度、缺乏个人色彩等维度判断。\n"
+        "给出AIGC概率（0-100），并一句话说明理由。\n"
+        '只输出JSON：{"score": 数字, "reason": "一句话"}\n\n'
+        f"文本：\n{text[:3000]}"
+    )
+    msg = engine.chat([
+        {"role": "system", "content": "你是AI文本检测专家，只输出JSON。"},
+        {"role": "user", "content": prompt},
+    ], temperature=0.1)
+    import re as _re
+    m = _re.search(r'\{[^}]+\}', msg, _re.S)
+    if m:
+        obj = json.loads(m.group(0))
+        return int(obj.get("score", 50)), obj.get("reason", "")
+    return 50, "判断失败"
 
 
 @app.post("/api/plagiarism-check")
