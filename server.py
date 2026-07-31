@@ -343,9 +343,11 @@ def plagiarism_check(req: CheckReq, request: Request):
     # 构建报告
     all_matches = []
     for s in glm_result.get("suspects", []):
-        all_matches.append({"sentence": s[:80], "overlap": 0, "title": "GLM 识别：疑似非原创内容", "url": ""})
+        all_matches.append({"sentence": s, "overlap": 0, "title": "GLM 识别：疑似非原创", "url": ""})
     for m in web_matches:
         all_matches.append(m)
+    # 逐段风险（GLM 独有）
+    para_risks = glm_result.get("paragraphs", [])
     result = {
         "similarity_score": final_score,
         "verdict": verdict,
@@ -353,31 +355,41 @@ def plagiarism_check(req: CheckReq, request: Request):
         "matched_count": len(all_matches),
         "checked_count": web_result.get("checked_count", 0),
         "matches": all_matches[:10],
+        "paragraphs": para_risks,
         "glm_reason": glm_result["reason"],
-        "note": ("GLM 原创度分析 + 互联网搜索双引擎。能识别常见抄袭模式和网络逐字复制，"
-                 "但不包含知网/万方等闭源数据库内容，结果仅供参考。"),
+        "note": ("GLM 逐段原创度分析 + 互联网搜索双引擎。GLM 基于训练时阅读的海量学术内容判断，"
+                 "接近但不等于知网/万方的精确数据库查重，结果仅供参考。"),
         "quota": quota.get_state_summary(request.state.cid),
     }
     return result
 
 
 def _glm_plagiarism_judge(text):
-    """让 GLM 分析文本原创度。GLM 读过海量论文/教科书/百科，能认出常见抄袭模式。"""
+    """让 GLM 做深度原创度分析：逐段评估 + 精确定位 + 量化。
+
+    GLM 读过海量中文论文/教科书/百科/期刊，能模糊"记住"哪些表达是常见的。
+    不是精确数据库比对，但能识别常见定义、模板化表达、风格突变（拼接抄袭）。
+    """
     prompt = (
-        "你是学术论文原创度分析专家。分析以下中文文本的原创性和重复风险。\n\n"
-        "请判断：\n"
-        "1. 是否有内容像是从教科书、百科、已发表论文中直接复制的（标准定义、常见描述）\n"
-        "2. 写作风格是否一致（风格突变 = 可能是拼接抄袭）\n"
-        "3. 是否有未标注引用的他人观点\n"
-        "4. 是否有高度模板化的段落（多处可见的标准表达）\n\n"
-        "给出重复风险（0-100，越高越可能含非原创内容），列出最可疑的句子，并总体评价。\n\n"
-        '只输出JSON：{"score": 数字, "suspects": ["可疑句子1", "可疑句子2"], "reason": "总体评价"}\n\n'
-        f"文本：\n{text[:3000]}"
+        "你是一名严谨的学术查重分析员。请对以下文本做逐段原创度分析。\n\n"
+        "分析维度（每段都评）：\n"
+        "- 【高频表达】该段是否包含在学术论文中极常见的定义、描述或模板句式\n"
+        "- 【风格一致性】该段写作风格（用词、句长、语气）是否与上下文一致（突变=可能拼接）\n"
+        "- 【独创性】该段论述是否像作者原创的观点/实验/数据，还是像转述他人\n"
+        "- 【引用缺失】是否有陈述事实/他人观点但未标注引用\n\n"
+        "对每段给出风险等级（low/medium/high）。\n"
+        "最后给出总体重复风险（0-100）和详细评价。\n\n"
+        "输出格式（严格JSON）：\n"
+        '{"score": 0-100的数字, '
+        '"paragraphs": [{"text": "段落前20字...", "risk": "low/medium/high", "reason": "一句原因"}], '
+        '"suspects": ["最可疑的完整句子1", "最可疑的完整句子2"], '
+        '"reason": "总体评价2-3句"}\n\n'
+        f"待分析文本：\n{text[:4000]}"
     )
     msg = engine.chat([
-        {"role": "system", "content": "你是原创度分析专家，只输出JSON。"},
+        {"role": "system", "content": "你是学术查重分析员，只输出JSON，不要输出JSON以外的任何内容。"},
         {"role": "user", "content": prompt},
-    ], temperature=0.1)
+    ], temperature=0.15)
     import re as _re
     m = _re.search(r'\{.*\}', msg, _re.S)
     if m:
@@ -385,12 +397,13 @@ def _glm_plagiarism_judge(text):
             obj = json.loads(m.group(0))
             return {
                 "score": int(obj.get("score", 0)),
-                "suspects": obj.get("suspects", [])[:5],
+                "paragraphs": obj.get("paragraphs", [])[:8],
+                "suspects": [s[:100] for s in obj.get("suspects", [])][:5],
                 "reason": obj.get("reason", ""),
             }
         except Exception:
             pass
-    return {"score": 0, "suspects": [], "reason": "分析完成，未发现明显异常"}
+    return {"score": 0, "paragraphs": [], "suspects": [], "reason": "分析完成"}
 
 
 @app.post("/api/rewrite-file")
