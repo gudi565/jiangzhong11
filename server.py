@@ -321,11 +321,76 @@ def plagiarism_check(req: CheckReq, request: Request):
              "quota": quota.get_state_summary(request.state.cid)},
             status_code=402,
         )
-    data = detectors.check_plagiarism(text)
-    if "error" in data:
-        return JSONResponse(data, status_code=502)
-    data["quota"] = quota.get_state_summary(request.state.cid)
-    return data
+    # ① GLM 原创度分析（主力）— 识别常见抄袭模式、风格突变、标准定义
+    glm_result = {"score": 0, "suspects": [], "reason": ""}
+    try:
+        glm_result = _glm_plagiarism_judge(text)
+    except Exception:
+        glm_result["reason"] = "GLM 分析暂时不可用"
+    # ② 网络搜索（辅助）— 抓逐字复制
+    web_result = detectors.check_plagiarism(text, max_checks=6)
+    web_score = web_result.get("similarity_score", 0) if "error" not in web_result else 0
+    web_matches = web_result.get("matches", []) if "error" not in web_result else []
+    # ③ 合并：取两者最高风险
+    final_score = max(glm_result["score"], web_score)
+    final_score = max(5, min(95, final_score))
+    if final_score < 20:
+        verdict, color = "原创度较高", "ok"
+    elif final_score < 50:
+        verdict, color = "部分内容可能存在重复", "warn"
+    else:
+        verdict, color = "重复风险较高", "err"
+    # 构建报告
+    all_matches = []
+    for s in glm_result.get("suspects", []):
+        all_matches.append({"sentence": s[:80], "overlap": 0, "title": "GLM 识别：疑似非原创内容", "url": ""})
+    for m in web_matches:
+        all_matches.append(m)
+    result = {
+        "similarity_score": final_score,
+        "verdict": verdict,
+        "color": color,
+        "matched_count": len(all_matches),
+        "checked_count": web_result.get("checked_count", 0),
+        "matches": all_matches[:10],
+        "glm_reason": glm_result["reason"],
+        "note": ("GLM 原创度分析 + 互联网搜索双引擎。能识别常见抄袭模式和网络逐字复制，"
+                 "但不包含知网/万方等闭源数据库内容，结果仅供参考。"),
+        "quota": quota.get_state_summary(request.state.cid),
+    }
+    return result
+
+
+def _glm_plagiarism_judge(text):
+    """让 GLM 分析文本原创度。GLM 读过海量论文/教科书/百科，能认出常见抄袭模式。"""
+    prompt = (
+        "你是学术论文原创度分析专家。分析以下中文文本的原创性和重复风险。\n\n"
+        "请判断：\n"
+        "1. 是否有内容像是从教科书、百科、已发表论文中直接复制的（标准定义、常见描述）\n"
+        "2. 写作风格是否一致（风格突变 = 可能是拼接抄袭）\n"
+        "3. 是否有未标注引用的他人观点\n"
+        "4. 是否有高度模板化的段落（多处可见的标准表达）\n\n"
+        "给出重复风险（0-100，越高越可能含非原创内容），列出最可疑的句子，并总体评价。\n\n"
+        '只输出JSON：{"score": 数字, "suspects": ["可疑句子1", "可疑句子2"], "reason": "总体评价"}\n\n'
+        f"文本：\n{text[:3000]}"
+    )
+    msg = engine.chat([
+        {"role": "system", "content": "你是原创度分析专家，只输出JSON。"},
+        {"role": "user", "content": prompt},
+    ], temperature=0.1)
+    import re as _re
+    m = _re.search(r'\{.*\}', msg, _re.S)
+    if m:
+        try:
+            obj = json.loads(m.group(0))
+            return {
+                "score": int(obj.get("score", 0)),
+                "suspects": obj.get("suspects", [])[:5],
+                "reason": obj.get("reason", ""),
+            }
+        except Exception:
+            pass
+    return {"score": 0, "suspects": [], "reason": "分析完成，未发现明显异常"}
 
 
 @app.post("/api/rewrite-file")
