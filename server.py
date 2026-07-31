@@ -167,7 +167,7 @@ def rewrite(req: RewriteReq, request: Request):
     try:
         data = (engine.rewrite_simple(text, req.strength, req.discipline) if req.mode == "simple"
                 else engine.rewrite_pipeline(text, req.strength, req.discipline))
-        data["quota"] = quota.get_state_summary(request.state.cid)
+        data["quota"] = quota.consume(request.state.cid)
         return data
     except Exception as e:
         return _engine_err(e)
@@ -198,7 +198,7 @@ def humanize(req: HumanizeReq, request: Request):
         )
     try:
         data = engine.rewrite_humanize(text, req.strength)
-        data["quota"] = quota.get_state_summary(request.state.cid)
+        data["quota"] = quota.consume(request.state.cid)
         return data
     except Exception as e:
         return _engine_err(e)
@@ -232,7 +232,7 @@ def edit_english(req: EnglishReq, request: Request):
         )
     try:
         data = engine.rewrite_english(text, req.strength, req.sub)
-        data["quota"] = quota.get_state_summary(request.state.cid)
+        data["quota"] = quota.consume(request.state.cid)
         return data
     except Exception as e:
         return _engine_err(e)
@@ -328,7 +328,7 @@ async def rewrite_file(
             data = (engine.rewrite_simple(text, strength, discipline) if mode == "simple"
                     else engine.rewrite_pipeline(text, strength, discipline))
         data["orig_text"] = text
-        data["quota"] = quota.get_state_summary(request.state.cid)
+        data["quota"] = quota.consume(request.state.cid)
         return data
     except Exception as e:
         return _engine_err(e)
@@ -398,7 +398,7 @@ def order_create(req: OrderReq, request: Request):
     is_local = "localhost" in str(request.base_url) or "127.0.0.1" in str(request.base_url)
     if not is_local:
         return JSONResponse({"error": "在线支付暂未配置，请使用兑换码"}, status_code=503)
-    summary = quota.activate(cid, plan["seconds"])
+    summary = quota.activate_uses(cid, plan["uses"]) if plan.get("type") == "uses" else quota.activate(cid, plan["seconds"])
     quota.mark_order_paid(order_id)
     return {"test": True, "message": "测试模式", "quota": summary}
 
@@ -420,8 +420,12 @@ async def order_notify(request: Request):
             trade_no = resource.get("out_trade_no", "")
             res = quota.mark_order_paid(trade_no)
             if res:
-                cid, plan = res
-                quota.activate(cid, pay.PLANS[plan]["seconds"])
+                cid, plan_key = res
+                pd = pay.PLANS[plan_key]
+                if pd.get("type") == "uses":
+                    quota.activate_uses(cid, pd["uses"])
+                else:
+                    quota.activate(cid, pd["seconds"])
         return JSONResponse({"code": "SUCCESS", "message": "成功"})
 
     # 虎皮椒回调（form-data + MD5 hash 验签）

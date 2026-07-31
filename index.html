@@ -36,9 +36,22 @@
     </span>
   </div>
   <div id="buy-panel" class="buy-panel" hidden>
-    <button class="plan-btn" data-plan="1h" type="button"><span class="plan-name">1 小时</span><span class="plan-price">¥9.9</span></button>
-    <button class="plan-btn" data-plan="1d" type="button"><span class="plan-name">1 天</span><span class="plan-price">¥29.9</span></button>
-    <button class="plan-btn" data-plan="7d" type="button"><span class="plan-name">7 天</span><span class="plan-price">¥69.9</span></button>
+    <div class="plan-section">
+      <div class="plan-section-title">按次数</div>
+      <div class="plan-row">
+        <button class="plan-btn" data-plan="u5" type="button"><span class="plan-name">5 次</span><span class="plan-price">¥4.9</span></button>
+        <button class="plan-btn" data-plan="u10" type="button"><span class="plan-name">10 次</span><span class="plan-price">¥8.9</span></button>
+        <button class="plan-btn" data-plan="u30" type="button"><span class="plan-name">30 次</span><span class="plan-price">¥19.9</span></button>
+      </div>
+    </div>
+    <div class="plan-section">
+      <div class="plan-section-title">按天数 <small>不限次</small></div>
+      <div class="plan-row">
+        <button class="plan-btn" data-plan="d1" type="button"><span class="plan-name">1 天</span><span class="plan-price">¥9.9</span></button>
+        <button class="plan-btn" data-plan="d7" type="button"><span class="plan-name">7 天</span><span class="plan-price">¥29.9</span></button>
+        <button class="plan-btn" data-plan="d30" type="button"><span class="plan-name">30 天</span><span class="plan-price">¥69.9</span></button>
+      </div>
+    </div>
     <div id="buy-status" class="buy-status"></div>
   </div>
 

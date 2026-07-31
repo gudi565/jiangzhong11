@@ -1,12 +1,11 @@
-"""Time-based access + redemption-code store for 降重.
+"""Per-client quota — supports TWO plan types simultaneously:
 
-A client (cookie jz_cid) has an `expires_at` unix timestamp. Access is allowed
-while now < expires_at. Redeeming a code extends expires_at by the code's
-duration (default 1 hour). Codes (JZ-............) are sold as 卡密 on
-Taobao / 独角数卡; the buyer pastes one to activate.
+1) TIME plan (按天数): expires_at timestamp, unlimited uses during period.
+2) USES plan (按次数): remaining_uses counter, each rewrite consumes 1.
 
-State persists to state.json next to this file. A threading.Lock serializes
-mutations; the slow LLM call happens outside the lock.
+A client can have both active at once (e.g., bought 7 days + 10 extra uses).
+is_active = time not expired OR uses > 0.
+consume() only decrements uses (time plans = unlimited).
 """
 import json
 import os
@@ -16,8 +15,7 @@ import time
 from pathlib import Path
 
 STATE_PATH = Path(__file__).parent / "state.json"
-FREE_TRIAL_SECONDS = 0          # 0 = 必须有兑换码才能用；设 600 可给新访客 10 分钟试用
-DEFAULT_CODE_SECONDS = 3600     # 一个兑换码默认 = 1 小时
+FREE_TRIAL_SECONDS = 0
 ADMIN_SECRET = os.environ.get("JZ_ADMIN_SECRET", "dev-secret-change-me")
 
 _lock = threading.Lock()
@@ -45,30 +43,87 @@ def new_client_id() -> str:
 def _client(state, cid):
     c = state["clients"].get(cid)
     if c is None:
-        c = {"expires_at": time.time() + FREE_TRIAL_SECONDS, "redeemed": []}
+        c = {"expires_at": 0, "remaining_uses": 0, "used": 0, "redeemed": []}
         state["clients"][cid] = c
-    elif "expires_at" not in c:
-        c["expires_at"] = time.time() + FREE_TRIAL_SECONDS
+    elif "remaining_uses" not in c:
+        c["remaining_uses"] = 0
     return c
 
 
 def is_active(cid: str):
-    """Return (active: bool, expires_at: float)."""
+    """Return (active, expires_at, remaining_uses)."""
     with _lock:
         s = _load()
         c = _client(s, cid)
         _save(s)
-        return c["expires_at"] > time.time(), c["expires_at"]
+        return (c["expires_at"] > time.time() or c["remaining_uses"] > 0,
+                c["expires_at"], c["remaining_uses"])
+
+
+def consume(cid: str) -> dict:
+    """Consume 1 use. Time-plan users don't consume (unlimited). Returns summary."""
+    with _lock:
+        s = _load()
+        c = _client(s, cid)
+        now = time.time()
+        if c.get("expires_at", 0) > now:
+            pass  # time plan active = unlimited
+        elif c.get("remaining_uses", 0) > 0:
+            c["remaining_uses"] -= 1
+            c["used"] = c.get("used", 0) + 1
+        exp = c.get("expires_at", 0)
+        uses = c.get("remaining_uses", 0)
+        _save(s)
+        return _summary(exp, uses)
+
+
+def _summary(exp, uses):
+    now = time.time()
+    time_active = exp > now
+    uses_active = uses > 0
+    return {
+        "active": time_active or uses_active,
+        "expires_at": exp,
+        "remaining_seconds": max(0, int(exp - now)) if time_active else 0,
+        "remaining_uses": uses,
+        "time_active": time_active,
+        "uses_active": uses_active,
+    }
 
 
 def get_state_summary(cid: str) -> dict:
     with _lock:
         s = _load()
         c = _client(s, cid)
+        exp = c.get("expires_at", 0)
+        uses = c.get("remaining_uses", 0)
         _save(s)
+        return _summary(exp, uses)
+
+
+def activate(cid: str, seconds: int) -> dict:
+    """Time plan: extend expires_at."""
+    with _lock:
+        s = _load()
+        c = _client(s, cid)
+        base = max(c.get("expires_at", 0), time.time())
+        c["expires_at"] = base + seconds
         exp = c["expires_at"]
-        return {"active": exp > time.time(), "expires_at": exp,
-                "remaining_seconds": max(0, int(exp - time.time()))}
+        uses = c.get("remaining_uses", 0)
+        _save(s)
+        return _summary(exp, uses)
+
+
+def activate_uses(cid: str, count: int) -> dict:
+    """Uses plan: add count to remaining_uses."""
+    with _lock:
+        s = _load()
+        c = _client(s, cid)
+        c["remaining_uses"] = c.get("remaining_uses", 0) + count
+        exp = c.get("expires_at", 0)
+        uses = c["remaining_uses"]
+        _save(s)
+        return _summary(exp, uses)
 
 
 def redeem(cid: str, code: str) -> dict:
@@ -85,7 +140,7 @@ def redeem(cid: str, code: str) -> dict:
             return {"ok": False, "error": "兑换码已被使用"}
         cd["used"] = True
         cd["used_by"] = cid
-        dur = cd.get("seconds", DEFAULT_CODE_SECONDS)
+        dur = cd.get("seconds", 0)
         base = max(c.get("expires_at", 0), time.time())
         c["expires_at"] = base + dur
         c.setdefault("redeemed", []).append(code)
@@ -107,19 +162,6 @@ def gen_codes(n: int, seconds: int) -> list:
     return codes
 
 
-def activate(cid: str, seconds: int) -> dict:
-    """直接给客户端加时长（不走兑换码，用于支付成功开通）。"""
-    with _lock:
-        s = _load()
-        c = _client(s, cid)
-        base = max(c.get("expires_at", 0), time.time())
-        c["expires_at"] = base + seconds
-        exp = c["expires_at"]
-        _save(s)
-        return {"active": exp > time.time(), "expires_at": exp,
-                "remaining_seconds": max(0, int(exp - time.time()))}
-
-
 def create_order_record(order_id: str, cid: str, plan: str) -> None:
     with _lock:
         s = _load()
@@ -130,7 +172,6 @@ def create_order_record(order_id: str, cid: str, plan: str) -> None:
 
 
 def mark_order_paid(order_id: str):
-    """首次标记已支付返回 (cid, plan)；已处理/不存在返回 None（防重复回调）。"""
     with _lock:
         s = _load()
         o = s.get("orders", {}).get(order_id)

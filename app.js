@@ -83,9 +83,14 @@ function fmtDuration(sec) {
 function setQuota(summary) {
   if (!summary) return;
   const chip = document.querySelector(".quota-chip");
-  chip.innerHTML = summary.active
-    ? `剩余 <b>${fmtDuration(summary.remaining_seconds)}</b>`
-    : `<b>未激活</b> · 需兑换码`;
+  if (summary.active) {
+    let parts = [];
+    if (summary.remaining_uses > 0) parts.push(`剩余 <b>${summary.remaining_uses}</b> 次`);
+    if (summary.time_active) parts.push(`剩余 <b>${fmtDuration(summary.remaining_seconds)}</b>`);
+    chip.innerHTML = parts.join(" · ") || "已激活";
+  } else {
+    chip.innerHTML = `<b>未激活</b> · 需购买`;
+  }
 }
 
 async function fetchQuota() {

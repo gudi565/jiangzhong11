@@ -14,9 +14,14 @@ import io
 import base64
 
 PLANS = {
-    "1h": {"seconds": 3600, "price": "9.90", "name": "1 小时"},
-    "1d": {"seconds": 86400, "price": "29.90", "name": "1 天"},
-    "7d": {"seconds": 604800, "price": "69.90", "name": "7 天"},
+    # 按次数（轻度用户）
+    "u5":  {"type": "uses", "uses": 5,  "price": "4.90",  "name": "5 次"},
+    "u10": {"type": "uses", "uses": 10, "price": "8.90",  "name": "10 次"},
+    "u30": {"type": "uses", "uses": 30, "price": "19.90", "name": "30 次"},
+    # 按天数（重度用户，不限次）
+    "d1":  {"type": "time", "seconds": 86400,   "price": "9.90",  "name": "1 天"},
+    "d7":  {"type": "time", "seconds": 604800,  "price": "29.90", "name": "7 天"},
+    "d30": {"type": "time", "seconds": 2592000, "price": "69.90", "name": "30 天"},
 }
 
 APP_ID = os.environ.get("ALIPAY_APP_ID", "")
