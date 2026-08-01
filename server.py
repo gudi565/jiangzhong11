@@ -157,7 +157,7 @@ def rewrite(req: RewriteReq, request: Request):
     if err:
         return JSONResponse({"error": err}, status_code=400)
 
-    active, _ = quota.is_active(request.state.cid)
+    active, _, _ = quota.is_active(request.state.cid)
     if not active:
         return JSONResponse(
             {"error": "未激活或已到期，请输入兑换码（淘宝购买）。",
@@ -189,7 +189,7 @@ def humanize(req: HumanizeReq, request: Request):
         return JSONResponse({"error": f"文本过长（>{MAX_CHARS} 字），请分段处理"}, status_code=413)
     if req.strength not in engine.STRENGTH_INSTR:
         return JSONResponse({"error": "strength 必须是 light / medium / deep"}, status_code=400)
-    active, _ = quota.is_active(request.state.cid)
+    active, _, _ = quota.is_active(request.state.cid)
     if not active:
         return JSONResponse(
             {"error": "未激活或已到期，请输入兑换码（淘宝购买）。",
@@ -223,7 +223,7 @@ def edit_english(req: EnglishReq, request: Request):
         return JSONResponse({"error": "strength 必须是 light / medium / deep"}, status_code=400)
     if req.sub not in ("polish", "dedup", "translate"):
         return JSONResponse({"error": "sub 必须是 polish / dedup / translate"}, status_code=400)
-    active, _ = quota.is_active(request.state.cid)
+    active, _, _ = quota.is_active(request.state.cid)
     if not active:
         return JSONResponse(
             {"error": "未激活或已到期，请输入兑换码（淘宝购买）。",
@@ -247,7 +247,7 @@ def aigc_check(req: CheckReq, request: Request):
     text = req.text.strip()
     if len(text) < 10:
         return JSONResponse({"error": "文本太短，请至少输入 10 个字"}, status_code=400)
-    active, _ = quota.is_active(request.state.cid)
+    active, _, _ = quota.is_active(request.state.cid)
     if not active:
         return JSONResponse(
             {"error": "未激活或已到期，请输入兑换码（淘宝购买）。",
@@ -314,7 +314,7 @@ def plagiarism_check(req: CheckReq, request: Request):
     text = req.text.strip()
     if len(text) < 10:
         return JSONResponse({"error": "文本太短，请至少输入 10 个字"}, status_code=400)
-    active, _ = quota.is_active(request.state.cid)
+    active, _, _ = quota.is_active(request.state.cid)
     if not active:
         return JSONResponse(
             {"error": "未激活或已到期，请输入兑换码（淘宝购买）。",
@@ -440,7 +440,7 @@ async def rewrite_file(
     if len(text) > FILE_MAX_CHARS:
         return JSONResponse({"error": f"文档文本过长（{len(text)} > {FILE_MAX_CHARS} 字），请精简或分段"}, status_code=413)
 
-    active, _ = quota.is_active(request.state.cid)
+    active, _, _ = quota.is_active(request.state.cid)
     if not active:
         return JSONResponse(
             {"error": "未激活或已到期，请输入兑换码（淘宝购买）。",
@@ -464,7 +464,7 @@ async def rewrite_file(
 
 @app.post("/api/make-docx")
 def make_docx(req: DocReq, request: Request):
-    active, _ = quota.is_active(request.state.cid)
+    active, _, _ = quota.is_active(request.state.cid)
     if not active:
         return JSONResponse(
             {"error": "未激活或已到期，请输入兑换码（淘宝购买）。",
