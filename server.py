@@ -276,9 +276,12 @@ def aigc_check(req: CheckReq, request: Request):
     if gpt2_score < 0:
         gpt2_score = 50
 
-    # 混合：GLM 可用时 GPT2(35%)+GLM(40%)+统计(25%)；不可用时 GPT2(55%)+统计(45%)
+    # 混合：GLM 最准（50%）+ GPT-2 困惑度（30%）+ 统计（20%）
+    # 但如果 GLM 和 GPT-2 都>60（两个引擎都认为偏AI），额外加10分
     if glm_score >= 0 and "不可用" not in glm_reason:
-        final = round(gpt2_score * 0.35 + glm_score * 0.40 + heu_score * 0.25)
+        final = round(gpt2_score * 0.30 + glm_score * 0.50 + heu_score * 0.20)
+        if glm_score >= 60 and gpt2_score >= 55:
+            final = min(97, final + 10)  # 双引擎一致认为偏AI → 加分
     else:
         final = round(gpt2_score * 0.55 + heu_score * 0.45)
     final = max(3, min(97, final))
