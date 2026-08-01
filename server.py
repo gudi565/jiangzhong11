@@ -1,4 +1,5 @@
 """降重 web service — FastAPI over engine.py + docx I/O + time-based quota."""
+import json
 import time
 import secrets
 import traceback
