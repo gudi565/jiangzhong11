@@ -254,14 +254,87 @@ def aigc_check(req: CheckReq, request: Request):
              "quota": quota.get_state_summary(request.state.cid)},
             status_code=402,
         )
-    # 用 GPT-2 困惑度 + 突发性检测（模型级，非 LLM 猜测）
     import ai_detector
-    data = ai_detector.detect_aigc(text)
-    if data.get("aigc_score", 0) < 0:
-        # 模型加载失败，回退到统计 + GLM
-        data = detectors.detect_aigc(text)
-    data["quota"] = quota.consume(request.state.cid)
-    return data
+
+    # ① GPT-2 困惑度（35%）
+    gpt2_data = ai_detector.detect_aigc(text)
+    gpt2_score = gpt2_data.get("aigc_score", 50)
+    if gpt2_score < 0:
+        gpt2_score = 50  # 模型加载失败，用默认值
+
+    # ② 统计分析（25%）
+    heu_data = detectors.detect_aigc(text)
+    heu_score = heu_data.get("aigc_score", 50)
+
+    # ③ GLM 判断（40%）
+    glm_score = -1
+    glm_reason = ""
+    if len(text) >= 20:
+        try:
+            glm_score, glm_reason = _glm_aigc_judge(text)
+        except Exception:
+            glm_reason = "暂时不可用"
+
+    # 混合：GLM 可用时 GPT2(35%)+GLM(40%)+统计(25%)；不可用时 GPT2(55%)+统计(45%)
+    if glm_score >= 0 and "不可用" not in glm_reason:
+        final = round(gpt2_score * 0.35 + glm_score * 0.40 + heu_score * 0.25)
+    else:
+        final = round(gpt2_score * 0.55 + heu_score * 0.45)
+    final = max(3, min(97, final))
+
+    if final < 35:
+        verdict, color = "偏低（偏人类写作）", "ok"
+    elif final < 65:
+        verdict, color = "中等（不确定）", "warn"
+    else:
+        verdict, color = "偏高（偏 AI 生成）", "err"
+
+    signals = gpt2_data.get("signals", [])
+    if glm_score >= 0:
+        signals.append({"name": "GLM 判断", "value": f"{glm_score}%", "score": glm_score, "hint": glm_reason})
+    signals.append({"name": "统计特征", "value": f"{heu_score}%", "score": heu_score,
+                    "hint": "套话/句长分析"})
+
+    result = {
+        "aigc_score": final,
+        "verdict": verdict,
+        "color": color,
+        "note": "三引擎混合检测：GPT-2 困惑度 + GLM 语义判断 + 统计特征。综合判断，结果仅供参考。",
+        "signals": signals,
+        "perplexity": gpt2_data.get("perplexity", 0),
+        "burstiness": gpt2_data.get("burstiness", 0),
+        "glm_reason": glm_reason,
+        "sentence_count": gpt2_data.get("sentence_count", 0),
+        "char_count": gpt2_data.get("char_count", 0),
+        "quota": quota.consume(request.state.cid),
+    }
+    return result
+
+
+def _glm_aigc_judge(text):
+    """让 GLM 判断文本是否 AI 生成，返回 (score, reason)。"""
+    prompt = (
+        "你是AI文本检测专家。分析以下中文文本是否由AI（ChatGPT/文心一言/通义千问等）生成。\n\n"
+        "重点判断：\n"
+        "1. 句式是否过于工整对称（AI倾向排比和对仗）\n"
+        "2. 是否大量使用模板化连接词（首先/其次/此外/综上所述/值得注意的是）\n"
+        "3. 论述结构是否过于线性（背景→问题→分析→结论的固定套路）\n"
+        "4. 词汇是否过于书面化和精准（AI倾向使用「迭代」「解构」「重构」等高频学术词）\n"
+        "5. 是否缺乏个人色彩、口语表达和具体的生活细节\n\n"
+        "给出AIGC概率（0-100），注意：即使文字看起来很学术、很正式，如果是AI生成的也要给高分。\n"
+        '只输出JSON：{"score": 数字, "reason": "一句话理由"}\n\n'
+        f"待检测文本：\n{text[:3000]}"
+    )
+    msg = engine.chat([
+        {"role": "system", "content": "你是AI文本检测专家，只输出JSON。"},
+        {"role": "user", "content": prompt},
+    ], temperature=0.1)
+    import re as _re
+    m = _re.search(r'\{[^}]+\}', msg, _re.S)
+    if m:
+        obj = json.loads(m.group(0))
+        return int(obj.get("score", 50)), obj.get("reason", "")
+    return 50, "判断失败"
 
 
 @app.post("/api/plagiarism-check")
