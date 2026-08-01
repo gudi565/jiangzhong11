@@ -356,18 +356,37 @@ def plagiarism_check(req: CheckReq, request: Request):
              "quota": quota.get_state_summary(request.state.cid)},
             status_code=402,
         )
-    # ① GLM 原创度分析（主力）— 识别常见抄袭模式、风格突变、标准定义
-    glm_result = {"score": 0, "suspects": [], "reason": ""}
+    # ① 先调 GLM（快，趁内存干净）
+    glm_result = {"score": 0, "suspects": [], "reason": "", "paragraphs": []}
     try:
         glm_result = _glm_plagiarism_judge(text)
+    except Exception as e:
+        glm_result["reason"] = f"GLM 分析暂时不可用: {type(e).__name__}"
+
+    # ② GPT-2 困惑度 → 估算"常见表达"占比（低困惑度=大量常见表达=高查重率）
+    ppl_score = 0
+    ppl_val = 0
+    try:
+        import ai_detector
+        ppl_data = ai_detector.detect_aigc(text)
+        ppl_val = ppl_data.get("perplexity", 30)
+        # 困惑度→查重风险映射：低困惑度=高查重率
+        if ppl_val < 12: ppl_score = 75
+        elif ppl_val < 18: ppl_score = 55
+        elif ppl_val < 25: ppl_score = 38
+        elif ppl_val < 35: ppl_score = 22
+        else: ppl_score = 10
     except Exception:
-        glm_result["reason"] = "GLM 分析暂时不可用"
-    # ② 网络搜索（辅助）— 抓逐字复制
+        pass
+
+    # ③ 网络搜索（辅助）— 抓逐字复制
     web_result = detectors.check_plagiarism(text, max_checks=6)
     web_score = web_result.get("similarity_score", 0) if "error" not in web_result else 0
     web_matches = web_result.get("matches", []) if "error" not in web_result else []
-    # ③ 合并：取两者最高风险
-    final_score = max(glm_result["score"], web_score)
+
+    # ④ 合并：GLM(40%) + 困惑度(40%) + 网络(20%)，取加权而非max
+    glm_s = glm_result.get("score", 0)
+    final_score = round(glm_s * 0.40 + ppl_score * 0.40 + web_score * 0.20)
     final_score = max(5, min(95, final_score))
     if final_score < 20:
         verdict, color = "原创度较高", "ok"
@@ -381,7 +400,6 @@ def plagiarism_check(req: CheckReq, request: Request):
         all_matches.append({"sentence": s, "overlap": 0, "title": "GLM 识别：疑似非原创", "url": ""})
     for m in web_matches:
         all_matches.append(m)
-    # 逐段风险（GLM 独有）
     para_risks = glm_result.get("paragraphs", [])
     result = {
         "similarity_score": final_score,
@@ -391,10 +409,10 @@ def plagiarism_check(req: CheckReq, request: Request):
         "checked_count": web_result.get("checked_count", 0),
         "matches": all_matches[:10],
         "paragraphs": para_risks,
-        "glm_reason": glm_result["reason"],
-        "note": ("GLM 逐段原创度分析 + 互联网搜索双引擎。GLM 基于训练时阅读的海量学术内容判断，"
-                 "接近但不等于知网/万方的精确数据库查重，结果仅供参考。"),
-        "quota": quota.get_state_summary(request.state.cid),
+        "glm_reason": glm_result.get("reason", ""),
+        "perplexity": ppl_val,
+        "note": "三引擎查重：GLM 原创度分析 + GPT-2 困惑度估算 + 互联网搜索。综合估算，接近但不等于知网精确查重，仅供参考。",
+        "quota": quota.consume(request.state.cid),
     }
     return result
 
