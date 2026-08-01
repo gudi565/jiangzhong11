@@ -5,3 +5,6 @@ python-docx
 duckduckgo-search
 wechatpayv3
 qrcode
+pillow
+transformers
+torch
