@@ -86,17 +86,20 @@ def detect_aigc(text):
     else:
         burstiness = 0.5
 
-    # 困惑度 → AI 概率（本地实测：AI=13, 人类=31, 学术=52）
-    if avg_ppl < 10:
+    # 困惑度 → AI 概率
+    # 校准基准（本地实测）：AI口语=13, AI学术=18, 人类口语=31, 人类学术=52
+    if avg_ppl < 12:
         ppl_score = 95
-    elif avg_ppl < 18:
-        ppl_score = 82
+    elif avg_ppl < 20:
+        ppl_score = 78
     elif avg_ppl < 28:
-        ppl_score = 55
-    elif avg_ppl < 45:
-        ppl_score = 28
+        ppl_score = 58
+    elif avg_ppl < 40:
+        ppl_score = 30
+    elif avg_ppl < 55:
+        ppl_score = 15
     else:
-        ppl_score = 10
+        ppl_score = 8
 
     # 突发性
     if burstiness < 0.2:
