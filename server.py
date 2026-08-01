@@ -256,24 +256,24 @@ def aigc_check(req: CheckReq, request: Request):
         )
     import ai_detector
 
-    # ① GPT-2 困惑度（35%）
-    gpt2_data = ai_detector.detect_aigc(text)
-    gpt2_score = gpt2_data.get("aigc_score", 50)
-    if gpt2_score < 0:
-        gpt2_score = 50  # 模型加载失败，用默认值
-
-    # ② 统计分析（25%）
-    heu_data = detectors.detect_aigc(text)
-    heu_score = heu_data.get("aigc_score", 50)
-
-    # ③ GLM 判断（40%）
+    # ① 先调 GLM（快，2-3秒，趁内存还没被 GPT-2 占用）
     glm_score = -1
     glm_reason = ""
     if len(text) >= 20:
         try:
             glm_score, glm_reason = _glm_aigc_judge(text)
-        except Exception:
-            glm_reason = "暂时不可用"
+        except Exception as e:
+            glm_reason = f"暂时不可用: {type(e).__name__}"
+
+    # ② 统计分析（快，内存小）
+    heu_data = detectors.detect_aigc(text)
+    heu_score = heu_data.get("aigc_score", 50)
+
+    # ③ GPT-2 困惑度（慢，占内存，放最后）
+    gpt2_data = ai_detector.detect_aigc(text)
+    gpt2_score = gpt2_data.get("aigc_score", 50)
+    if gpt2_score < 0:
+        gpt2_score = 50
 
     # 混合：GLM 可用时 GPT2(35%)+GLM(40%)+统计(25%)；不可用时 GPT2(55%)+统计(45%)
     if glm_score >= 0 and "不可用" not in glm_reason:
