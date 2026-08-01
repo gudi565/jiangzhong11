@@ -356,37 +356,27 @@ def plagiarism_check(req: CheckReq, request: Request):
              "quota": quota.get_state_summary(request.state.cid)},
             status_code=402,
         )
-    # ① 先调 GLM（快，趁内存干净）
+    # ① 先调 GLM（查重主力，趁内存干净）
     glm_result = {"score": 0, "suspects": [], "reason": "", "paragraphs": []}
     try:
         glm_result = _glm_plagiarism_judge(text)
     except Exception as e:
         glm_result["reason"] = f"GLM 分析暂时不可用: {type(e).__name__}"
 
-    # ② GPT-2 困惑度 → 估算"常见表达"占比（低困惑度=大量常见表达=高查重率）
-    ppl_score = 0
-    ppl_val = 0
-    try:
-        import ai_detector
-        ppl_data = ai_detector.detect_aigc(text)
-        ppl_val = ppl_data.get("perplexity", 30)
-        # 困惑度→查重风险映射：低困惑度=高查重率
-        if ppl_val < 12: ppl_score = 75
-        elif ppl_val < 18: ppl_score = 55
-        elif ppl_val < 25: ppl_score = 38
-        elif ppl_val < 35: ppl_score = 22
-        else: ppl_score = 10
-    except Exception:
-        pass
+    # ② 统计分析（辅助，估算常见表达占比）
+    heu = detectors.detect_aigc(text)
+    heu_score = heu.get("aigc_score", 30)  # 统计AIGC分高≈套话多≈查重风险高
+    # 统计AIGC分 → 查重风险（套话多≈重复风险高）
+    stat_score = min(heu_score + 10, 80)  # 微调：统计分+10作为查重估算
 
     # ③ 网络搜索（辅助）— 抓逐字复制
     web_result = detectors.check_plagiarism(text, max_checks=6)
     web_score = web_result.get("similarity_score", 0) if "error" not in web_result else 0
     web_matches = web_result.get("matches", []) if "error" not in web_result else []
 
-    # ④ 合并：GLM(40%) + 困惑度(40%) + 网络(20%)，取加权而非max
+    # ④ 合并：GLM(55%) + 统计(25%) + 网络(20%)
     glm_s = glm_result.get("score", 0)
-    final_score = round(glm_s * 0.40 + ppl_score * 0.40 + web_score * 0.20)
+    final_score = round(glm_s * 0.55 + stat_score * 0.25 + web_score * 0.20)
     final_score = max(5, min(95, final_score))
     if final_score < 20:
         verdict, color = "原创度较高", "ok"
@@ -410,8 +400,8 @@ def plagiarism_check(req: CheckReq, request: Request):
         "matches": all_matches[:10],
         "paragraphs": para_risks,
         "glm_reason": glm_result.get("reason", ""),
-        "perplexity": ppl_val,
-        "note": "三引擎查重：GLM 原创度分析 + GPT-2 困惑度估算 + 互联网搜索。综合估算，接近但不等于知网精确查重，仅供参考。",
+        "perplexity": 0,
+        "note": "三引擎查重：GLM 原创度分析 + 统计特征 + 互联网搜索。综合估算，接近但不等于知网精确查重，仅供参考。",
         "quota": quota.consume(request.state.cid),
     }
     return result
