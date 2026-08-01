@@ -45,56 +45,70 @@ def detect_aigc(text):
     except Exception as e:
         return {"aigc_score": -1, "error": f"模型加载失败: {e}"}
 
-    # 按句拆分，逐句算困惑度
-    sents = [s.strip() for s in re.split(r"[。！？\n;；]+", text) if len(s.strip()) >= 4]
-    if not sents:
-        sents = [text[:200]] if len(text) >= 4 else [text + "临时填充文字"]
+    cleaned = re.sub(r"\s+", "", text)
+    if len(cleaned) < 10:
+        return {"aigc_score": 50, "verdict": "文本太短", "color": "warn",
+                "note": "样本过短，无法可靠检测", "signals": [],
+                "perplexity": 0, "burstiness": 0, "sentence_count": 0, "char_count": len(cleaned)}
+
+    # 按较长块算困惑度（不拆短句，避免短句虚高）
+    # 按 ~200 字一块切
+    blocks = []
+    sents = [s.strip() for s in re.split(r"[。！？\n;；]+", text) if s.strip()]
+    cur = ""
+    for s in sents:
+        if cur and len(cur) + len(s) > 200:
+            blocks.append(cur)
+            cur = s
+        else:
+            cur = (cur + s) if cur else s
+    if cur:
+        blocks.append(cur)
+    if not blocks:
+        blocks = [cleaned[:500]]
 
     ppls = []
-    for s in sents[:30]:  # 最多 30 句
-        p = _sentence_ppl(s)
-        if p and p > 0:
+    for b in blocks[:10]:
+        p = _sentence_ppl(b)
+        if p and 0 < p < 1000:
             ppls.append(p)
 
     if not ppls:
         return {"aigc_score": 50, "verdict": "无法分析", "color": "warn",
-                "note": "文本太短或格式异常，无法检测"}
+                "note": "文本格式异常", "signals": [],
+                "perplexity": 0, "burstiness": 0, "sentence_count": 0, "char_count": len(cleaned)}
 
     avg_ppl = sum(ppls) / len(ppls)
-    # 突发性 = 困惑度的变异系数
     if len(ppls) >= 2:
         mean = sum(ppls) / len(ppls)
         std = (sum((p - mean) ** 2 for p in ppls) / len(ppls)) ** 0.5
         burstiness = std / mean if mean > 0 else 0
     else:
-        burstiness = 0.5  # 默认中性
+        burstiness = 0.5
 
-    # 困惑度 → AI 概率（低困惑度 = 高 AI 概率）
-    if avg_ppl < 8:
+    # 困惑度 → AI 概率（本地实测：AI=13, 人类=31, 学术=52）
+    if avg_ppl < 10:
         ppl_score = 95
-    elif avg_ppl < 15:
-        ppl_score = 80
-    elif avg_ppl < 25:
+    elif avg_ppl < 18:
+        ppl_score = 82
+    elif avg_ppl < 28:
         ppl_score = 55
-    elif avg_ppl < 40:
-        ppl_score = 30
-    elif avg_ppl < 60:
-        ppl_score = 15
+    elif avg_ppl < 45:
+        ppl_score = 28
     else:
-        ppl_score = 5
+        ppl_score = 10
 
-    # 突发性 → AI 概率（低突发性 = 高 AI 概率）
+    # 突发性
     if burstiness < 0.2:
         burst_score = 80
     elif burstiness < 0.4:
-        burst_score = 60
+        burst_score = 55
     elif burstiness < 0.7:
-        burst_score = 35
+        burst_score = 30
     else:
         burst_score = 15
 
-    # 综合：困惑度 65% + 突发性 35%
-    final = round(ppl_score * 0.65 + burst_score * 0.35)
+    final = round(ppl_score * 0.70 + burst_score * 0.30)
     final = max(3, min(97, final))
 
     if final < 35:
@@ -119,6 +133,6 @@ def detect_aigc(text):
         "signals": signals,
         "perplexity": round(avg_ppl, 1),
         "burstiness": round(burstiness, 2),
-        "sentence_count": len(ppls),
-        "char_count": len(re.sub(r"\s+", "", text)),
+        "sentence_count": len(sents),
+        "char_count": len(cleaned),
     }
