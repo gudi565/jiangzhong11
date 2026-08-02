@@ -383,8 +383,12 @@ def plagiarism_check(req: CheckReq, request: Request):
 
     # ④ 合并：GLM(80%) + 统计(15%) + 网络(5%)
     # GLM 单引擎区分度 55 分，统计仅 14 分且会误判人类原创，故 GLM 权重最大化
-    glm_s = glm_result.get("score", 0)
-    final_score = round(glm_s * 0.80 + stat_score * 0.15 + web_score * 0.05)
+    glm_s = glm_result.get("score")
+    if glm_s is None:
+        # GLM 两次重试都失败：用统计+网络兜底，避免给 0 分误判为"原创度较高"
+        final_score = round(stat_score * 0.80 + web_score * 0.20)
+    else:
+        final_score = round(glm_s * 0.80 + stat_score * 0.15 + web_score * 0.05)
     final_score = max(5, min(95, final_score))
     if final_score < 20:
         verdict, color = "原创度较高", "ok"
@@ -416,7 +420,8 @@ def plagiarism_check(req: CheckReq, request: Request):
 
 
 def _glm_plagiarism_judge(text):
-    """让 GLM 做原创度分析，带具体校准例题。"""
+    """让 GLM 做原创度分析，带具体校准例题。
+    temperature=0 + markdown strip + 1 次重试，避免 GLM 偶发不吐 JSON 导致 score=0 误判。"""
     prompt = (
         "你是学术查重系统。判断这段文字的查重率估算（0-100）。\n\n"
         "【校准例题】以下是已知查重率的文本片段，参照打分：\n"
@@ -430,27 +435,32 @@ def _glm_plagiarism_judge(text):
         "大部分是套话但有少量具体技术名词 → 45-65分\n"
         "有具体实验数据/方法/案例穿插 → 25-40分\n"
         "大量个人经历/原创观点/独特案例 → 10-20分\n\n"
-        '只输出JSON：{"score":数字,"suspects":["最像套话的句子1","句子2"],"reason":"一句评价"}\n\n'
+        '只输出一个JSON对象，禁止输出markdown代码块、反引号或任何解释文字：{"score":数字,"suspects":["最像套话的句子1","句子2"],"reason":"一句评价"}\n\n'
         f"文本：\n{text[:2500]}"
     )
-    msg = engine.chat([
-        {"role": "system", "content": "你是查重分析员，只输出JSON。"},
-        {"role": "user", "content": prompt},
-    ], temperature=0.15)
     import re as _re
-    m = _re.search(r'\{.*\}', msg, _re.S)
-    if m:
-        try:
-            obj = json.loads(m.group(0))
-            return {
-                "score": int(obj.get("score", 0)),
-                "suspects": [s[:80] for s in obj.get("suspects", [])][:4],
-                "reason": obj.get("reason", ""),
-                "paragraphs": [],
-            }
-        except Exception:
-            pass
-    return {"score": 0, "suspects": [], "reason": "分析完成", "paragraphs": []}
+    sys_msg = "你是查重分析员。回复必须且只能是一个JSON对象，以 { 开头、} 结尾，不要```、不要代码块、不要任何文字解释。"
+    for _ in range(2):
+        msg = engine.chat([
+            {"role": "system", "content": sys_msg},
+            {"role": "user", "content": prompt},
+        ], temperature=0.0)
+        s = (msg or "").strip()
+        s = _re.sub(r"^```[a-zA-Z]*\s*", "", s)
+        s = _re.sub(r"\s*```\s*$", "", s)
+        m = _re.search(r'\{.*\}', s, _re.S)
+        if m:
+            try:
+                obj = json.loads(m.group(0))
+                return {
+                    "score": int(obj.get("score", 0)),
+                    "suspects": [x[:80] for x in obj.get("suspects", [])][:4],
+                    "reason": obj.get("reason", ""),
+                    "paragraphs": [],
+                }
+            except Exception:
+                pass
+    return {"score": None, "suspects": [], "reason": "GLM 暂时无法分析，已用统计特征估算", "paragraphs": []}
 
 @app.post("/api/rewrite-file")
 async def rewrite_file(
