@@ -356,7 +356,14 @@ def plagiarism_check(req: CheckReq, request: Request):
              "quota": quota.get_state_summary(request.state.cid)},
             status_code=402,
         )
-    # ① 先调 GLM（查重主力，趁内存干净）
+    # ① 先卸载 GPT-2（释放内存给 GLM HTTP 请求）
+    try:
+        import ai_detector, gc
+        ai_detector._model = None
+        gc.collect()
+    except Exception:
+        pass
+    # ② 调 GLM（查重主力）
     glm_result = {"score": 0, "suspects": [], "reason": "", "paragraphs": []}
     try:
         glm_result = _glm_plagiarism_judge(text)
