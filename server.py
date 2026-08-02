@@ -381,9 +381,10 @@ def plagiarism_check(req: CheckReq, request: Request):
     web_score = web_result.get("similarity_score", 0) if "error" not in web_result else 0
     web_matches = web_result.get("matches", []) if "error" not in web_result else []
 
-    # ④ 合并：GLM(65%) + 统计(20%) + 网络(15%)
+    # ④ 合并：GLM(80%) + 统计(15%) + 网络(5%)
+    # GLM 单引擎区分度 55 分，统计仅 14 分且会误判人类原创，故 GLM 权重最大化
     glm_s = glm_result.get("score", 0)
-    final_score = round(glm_s * 0.65 + stat_score * 0.20 + web_score * 0.15)
+    final_score = round(glm_s * 0.80 + stat_score * 0.15 + web_score * 0.05)
     final_score = max(5, min(95, final_score))
     if final_score < 20:
         verdict, color = "原创度较高", "ok"
