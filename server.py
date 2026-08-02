@@ -408,27 +408,15 @@ def plagiarism_check(req: CheckReq, request: Request):
 
 
 def _glm_plagiarism_judge(text):
-    """让 GLM 做深度原创度分析：逐段评估 + 精确定位 + 量化。"""
+    """让 GLM 做原创度分析。简化 prompt 避免 GLM 超时。"""
     prompt = (
-        "你是一名严谨的学术查重分析员，你阅读过海量中文学术论文、教科书和百科全书。\n"
-        "请对以下文本做逐段原创度分析。\n\n"
-        "重要：你要判断每段内容是否在你读过的学术文献中【高频出现】。\n"
-        "很多学生会从知网论文、百度百科、教科书里直接复制以下类型的段落：\n"
-        "- 标准定义（如「XX是研究...的科学」「随着XX的发展」）\n"
-        "- 常见理论描述（如「该理论认为」「研究表明」）\n"
-        "- 模板化背景介绍（如「在当今XX背景下」「近年来」）\n"
-        "- 方法论套话（如「本文采用XX方法，通过XX分析」）\n\n"
-        "对每段给出风险等级（low/medium/high）和判断理由。\n"
-        "给出总体重复风险（0-100），注意：常见学术套话和标准定义也算重复内容。\n\n"
-        "输出格式（严格JSON）：\n"
-        '{"score": 0-100的数字, '
-        '"paragraphs": [{"text": "段落前15字...", "risk": "low/medium/high", "reason": "一句原因"}], '
-        '"suspects": ["最可疑的完整句子1", "最可疑的完整句子2"], '
-        '"reason": "总体评价2-3句"}\n\n'
-        f"待分析文本：\n{text[:4000]}"
+        "你读过海量中文学术论文、教科书、百科全书。判断这段文字的重复风险（0-100）。\n"
+        "高分=大量常见表达/标准定义/模板套话；低分=原创观点/具体案例/独特表述。\n"
+        '只输出简短JSON：{"score":数字,"suspects":["最可疑的句子1"],"reason":"一句评价"}\n\n'
+        f"文本：\n{text[:2500]}"
     )
     msg = engine.chat([
-        {"role": "system", "content": "你是学术查重分析员，只输出JSON，不要输出JSON以外的任何内容。"},
+        {"role": "system", "content": "你是查重分析员，只输出JSON。"},
         {"role": "user", "content": prompt},
     ], temperature=0.15)
     import re as _re
@@ -438,14 +426,13 @@ def _glm_plagiarism_judge(text):
             obj = json.loads(m.group(0))
             return {
                 "score": int(obj.get("score", 0)),
-                "paragraphs": obj.get("paragraphs", [])[:8],
-                "suspects": [s[:100] for s in obj.get("suspects", [])][:5],
+                "suspects": [s[:80] for s in obj.get("suspects", [])][:4],
                 "reason": obj.get("reason", ""),
+                "paragraphs": [],
             }
         except Exception:
             pass
-    return {"score": 0, "paragraphs": [], "suspects": [], "reason": "分析完成"}
-
+    return {"score": 0, "suspects": [], "reason": "分析完成", "paragraphs": []}
 
 @app.post("/api/rewrite-file")
 async def rewrite_file(
