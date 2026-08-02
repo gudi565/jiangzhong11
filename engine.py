@@ -64,6 +64,25 @@ DISCIPLINE_INSTR = {
     "law": "学科语境为法学：法律法规名称、条款编号、专门术语必须逐字保留；法条的条/款/项/章/编等单位严禁互换或更改；主要改写法理分析、论证与说理部分的句式与措辞，不得改变对法条的理解。",
 }
 
+DETEMPLATE_INSTR = (
+    "额外要求（反模板化，降低 AI 检测与语义查重，必须执行）：\n"
+    "- 不要只做同义词替换，必须改变句子的表达方式与信息组织顺序。\n"
+    "- 拆解工整的排比对仗、四字短语扎堆、「一方面…另一方面」「不仅…而且」这类对称结构，换成不对称的自然表达。\n"
+    "- 打破「总-分-总」「首先/其次/最后」的标准模板，重组论证顺序。\n"
+    "- 避免扎堆使用「推动/促进/旨在/有助于/为核心/具有重要意义/取得显著成效」这类 AI 高频套话动词与短语，换更具体或更不常见的说法。\n"
+    "- 允许补充一两句自然的过渡或解释性表述（不改变核心论点），让行文更像人写、不像模板生成。"
+)
+
+SYSTEM_FLEX = (
+    "你是一名资深中文学术编辑，做「深度降重改写」：在保留原文含义、数据、引用、逻辑的前提下，"
+    "大幅变换语言表达方式，让文字既像人写的、又不像模板生成，从而同时降低字面查重率和语义/AI 查重。\n\n"
+    "保留规则（必须）：引用标记、数字、单位、百分比、年份、统计量、公式、术语、专有名词原样保留；不歪曲原意、不编造事实。\n"
+    "允许且鼓励（这是深度降重的核心，不算违规）：重组信息顺序、拆解模板与排比结构、补充自然的过渡或解释性表述、"
+    "变换论证角度与表达方式、换用更具体或不常见的动词与连接词。只换词不换结构的改写对深度降重无效。\n"
+    "只输出改写后的正文，不要前言/后记/解释/Markdown 代码块。"
+)
+
+
 TEMPERATURE = {"light": 0.3, "medium": 0.7, "deep": 0.95}
 TARGET_SIM = {"light": 0.99, "medium": 0.46, "deep": 0.33}
 
@@ -186,18 +205,29 @@ def classify_paragraphs(blocks: list) -> list:
     return labels[:len(blocks)]
 
 
+def _has_hard_facts(text: str) -> bool:
+    """含数字/百分比/年份/引用/单位 → 是数据/方法段，不能激进反模板化。"""
+    return bool(re.search(r"\d+(\.\d+)?\s*[%年mm克毫克]|\[\d|（[^）]*\d{4}|p\s*[<>]\s*0\.|表\s*\d|图\s*\d", text))
+
+
 def rewrite_block(block: str, strength: str, label: str, discipline: str = "auto", harder: bool = False) -> str:
     extra = ("上一版改得不够，请这次改得更彻底，进一步降低与原文的文字相似度，但仍必须保义、保引用、保数据。"
              if harder else "")
+    # deep 模式 + 非数据段（无硬事实）→ 叠加反模板化，直击 GLM 查重的「模板化判断」
+    detemplate = ""
+    if strength == "deep" and not _has_hard_facts(block):
+        detemplate = DETEMPLATE_INSTR
     msg = "\n\n".join(x for x in [
         STRENGTH_INSTR[strength],
         LABEL_INSTR.get(label, ""),
         DISCIPLINE_INSTR.get(discipline, ""),
+        detemplate,
         extra,
         f"原文：\n{block}",
     ] if x)
+    sys_prompt = SYSTEM_FLEX if detemplate else SYSTEM
     return chat([
-        {"role": "system", "content": SYSTEM},
+        {"role": "system", "content": sys_prompt},
         {"role": "user", "content": msg},
     ], temperature=TEMPERATURE[strength] + (0.05 if harder else 0))
 
@@ -273,6 +303,16 @@ HUMANIZE_INSTR = (
     "铁律不变：保留原意与逻辑；引用标记（[1]、(Smith, 2020)、（张三，2021）等）、数字、单位、百分比、年份、统计量、公式、术语、专有名词原样保留在语义对应处；不增删信息。只改「AI 味」，不改内容。"
 )
 
+HUMANIZE_SYS = (
+    "你是一名资深中文学术编辑，专门做「去 AI 化改写」：让 AI 生成的学术文字读起来像人写的，"
+    "大幅降低 AI 检测工具的识别率，同时保留原意与学术性。\n\n"
+    "保留规则（必须）：引用标记、数字、单位、百分比、年份、统计量、公式、术语、专有名词原样保留于语义对应处；不增删事实信息、不编造数据。\n"
+    "允许且鼓励（这是去 AI 化的核心，不算违规）：变换表达方式、加入自然的过渡与解释、改变论证顺序、"
+    "拆解模板与排比结构、加入作者口吻与判断（如「笔者认为」「令人意外的是」「这一点常被忽视」）。"
+    "这些是降低 AI 痕迹的必要手段，不要因为「保义」而拒绝改变表达——只换词不改结构的改写对去 AI 化无效。\n"
+    "只输出改写后的正文，不要前言/后记/解释/Markdown 代码块。"
+)
+
 
 def rewrite_humanize(text: str, strength: str = "medium") -> dict:
     blocks = chunk_paragraphs(text)
@@ -280,9 +320,9 @@ def rewrite_humanize(text: str, strength: str = "medium") -> dict:
     for b in blocks:
         msg = "\n\n".join(x for x in [HUMANIZE_INSTR, STRENGTH_INSTR[strength], f"原文：\n{b}"] if x)
         parts.append(chat([
-            {"role": "system", "content": SYSTEM},
+            {"role": "system", "content": HUMANIZE_SYS},
             {"role": "user", "content": msg},
-        ], temperature=0.85))
+        ], temperature=0.95))
     out = "\n\n".join(p.strip() for p in parts)
     sim = similarity(text, out)
     return {
