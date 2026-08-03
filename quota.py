@@ -15,10 +15,38 @@ import time
 from pathlib import Path
 
 STATE_PATH = Path(__file__).parent / "state.json"
+LOCK_PATH = STATE_PATH.with_suffix(".lock")
 FREE_TRIAL_SECONDS = 0
 ADMIN_SECRET = os.environ.get("JZ_ADMIN_SECRET", "dev-secret-change-me")
 
-_lock = threading.Lock()
+
+class _FileLock:
+    """双层锁：threading.Lock 锁进程内多线程（uvicorn 线程池并发请求），
+    fcntl 锁跨进程（多 worker / 多进程部署）。
+    单用 fcntl 不行——POSIX 下同进程对同一文件的多次 LOCK_EX 不互斥。"""
+    _thread_lock = threading.Lock()
+
+    def __enter__(self):
+        self._thread_lock.acquire()
+        self._f = open(LOCK_PATH, "w")
+        try:
+            import fcntl
+            fcntl.flock(self._f, fcntl.LOCK_EX)
+        except (ImportError, OSError):
+            pass  # Windows / 不支持 flock → 退化为仅线程锁（单进程仍安全）
+        return self
+
+    def __exit__(self, *a):
+        try:
+            import fcntl
+            fcntl.flock(self._f, fcntl.LOCK_UN)
+        except (ImportError, OSError):
+            pass
+        self._f.close()
+        self._thread_lock.release()
+
+
+_lock = _FileLock()
 
 
 def _load() -> dict:
