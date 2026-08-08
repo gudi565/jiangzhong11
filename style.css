@@ -353,3 +353,20 @@ button { cursor: pointer; }
   /* 触屏设备:减弱 blur 层数以省电 */
   .metric, .signal, .match, .diag, .text, .col h3 + div { backdrop-filter: none !important; -webkit-backdrop-filter: none !important; }
 }
+
+/* ===== 支付弹窗 ===== */
+.pay-modal { position: fixed; inset: 0; background: rgba(0,0,0,0.72); backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px); display: grid; place-items: center; z-index: 1000; padding: 20px; }
+.pay-modal[hidden] { display: none; }
+.pay-modal-card { position: relative; background: var(--bg2); border: 1px solid var(--glass-border-strong); border-radius: 20px; padding: 30px 24px 24px; max-width: 340px; width: 100%; box-shadow: 0 24px 60px rgba(0,0,0,0.6), var(--glow-soft); text-align: center; }
+.pay-modal-close { position: absolute; top: 8px; right: 12px; background: transparent; border: none; color: var(--muted); font-size: 26px; line-height: 1; cursor: pointer; padding: 4px 10px; border-radius: 980px; transition: color .15s, background .15s; }
+.pay-modal-close:hover { color: var(--accent); background: rgba(91,240,176,0.10); }
+.pay-modal-title { font-family: var(--font-display); font-size: 20px; font-weight: 600; color: var(--accent); margin: 0 0 14px; letter-spacing: -0.01em; }
+.pay-modal-body .pay-status { color: var(--ink); font-size: 15px; margin: 18px 0; line-height: 1.6; }
+.pay-modal-body .pay-qr { width: 220px; height: 220px; display: block; margin: 0 auto; border-radius: 14px; border: 1px solid var(--glass-border); background: #fff; padding: 8px; box-sizing: border-box; }
+.pay-modal-body .pay-link { display: inline-block; margin-top: 12px; padding: 11px 24px; background: var(--accent); color: var(--accent-ink) !important; border-radius: 980px; font-weight: 700; text-decoration: none; box-shadow: var(--glow); }
+.pay-modal-body .pay-link:hover { filter: brightness(1.05); }
+.pay-modal-body .pay-hint { color: var(--muted); font-size: 12.5px; margin-top: 12px; }
+@media (max-width: 420px) {
+  .pay-modal-body .pay-qr { width: 180px; height: 180px; }
+  .pay-modal-card { padding: 26px 18px 20px; }
+}

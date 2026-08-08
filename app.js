@@ -131,49 +131,59 @@ $("buy-btn").addEventListener("click", () => {
   $("buy-status").textContent = "";
 });
 
+// 支付弹窗:点套餐后弹出,可关闭切换其他套餐
+const payModal = $("pay-modal");
+let payToken = 0;
+function closePayModal() { payToken++; payModal.hidden = true; }
+$("pay-modal-close").addEventListener("click", closePayModal);
+payModal.addEventListener("click", (e) => { if (e.target === payModal) closePayModal(); });
+const PLAN_NAMES = {
+  u5: "5 次 ¥4.9", u10: "10 次 ¥8.9", u30: "30 次 ¥19.9",
+  "1h": "1 小时 ¥4.99", "3h": "3 小时 ¥12.99", "1d": "1 天 ¥29.9", "7d": "7 天 ¥69.9",
+};
+function setModalBody(html) { if (payModal.hidden) return; $("pay-modal-body").innerHTML = html; }
+
 document.querySelectorAll(".plan-btn").forEach((btn) => {
   btn.addEventListener("click", async () => {
     const plan = btn.dataset.plan;
-    const status = $("buy-status");
-    document.querySelectorAll(".plan-btn").forEach((b) => (b.disabled = true));
-    status.textContent = "正在创建订单…";
+    const myToken = ++payToken; // 让之前的轮询失效
+    $("pay-modal-title").textContent = PLAN_NAMES[plan] || "支付";
+    payModal.hidden = false;
+    setModalBody('<div class="pay-status">正在创建订单…</div>');
     try {
       const r = await fetch("/api/order/create", {
         method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ plan }),
       });
       const data = await r.json();
-      if (!r.ok) { status.textContent = "❌ " + (data.error || "下单失败"); return; }
+      if (myToken !== payToken) return; // 已被关闭或切换
+      if (!r.ok) { setModalBody('<div class="pay-status">❌ ' + (data.error || "下单失败") + '</div>'); return; }
       if (data.test) {
         if (data.quota) setQuota(data.quota);
-        status.textContent = "✅ 测试模式：已直接开通";
-        setTimeout(() => { $("buy-panel").hidden = true; }, 1500);
+        setModalBody('<div class="pay-status">✅ 测试模式:已直接开通</div>');
+        setTimeout(() => { if (myToken === payToken) closePayModal(); }, 1500);
         return;
       }
-      if (data.qr_image) {
-        status.innerHTML = '<img src="' + data.qr_image + '" class="pay-qr" />'
-          + '<a href="' + data.qr_url + '" target="_blank" class="pay-link">手机用户点此支付 →</a>'
-          + '<div class="pay-hint">用微信扫码支付，完成后自动开通</div>';
-      } else {
-        status.textContent = "订单创建失败";
-      }
+      if (!data.qr_image) { setModalBody('<div class="pay-status">订单创建失败</div>'); return; }
+      setModalBody('<img src="' + data.qr_image + '" class="pay-qr" />'
+        + '<a href="' + data.qr_url + '" target="_blank" class="pay-link">手机用户点此支付 →</a>'
+        + '<div class="pay-hint">微信扫码支付,完成后自动开通</div>');
       const oid = data.order_id;
       for (let i = 0; i < 90; i++) {
         await new Promise((r) => setTimeout(r, 2000));
+        if (myToken !== payToken) return; // 被关闭或切换
         const sr = await fetch(`/api/order/status?order_id=${oid}`);
         const sd = await sr.json();
         if (sd.paid) {
           if (sd.quota) setQuota(sd.quota);
-          status.textContent = "✅ 开通成功！可以用了";
-          setTimeout(() => { $("buy-panel").hidden = true; }, 2000);
+          setModalBody('<div class="pay-status">✅ 开通成功!可以用了</div>');
+          setTimeout(() => { if (myToken === payToken) closePayModal(); }, 2000);
           return;
         }
       }
-      status.textContent = "未检测到支付，如已付款请联系客服";
+      if (myToken === payToken) setModalBody('<div class="pay-status">未检测到支付,如已付款请联系客服</div>');
     } catch (e) {
-      status.textContent = "❌ " + (e.message || String(e));
-    } finally {
-      document.querySelectorAll(".plan-btn").forEach((b) => (b.disabled = false));
+      if (myToken === payToken) setModalBody('<div class="pay-status">❌ ' + (e.message || String(e)) + '</div>');
     }
   });
 });
