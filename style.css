@@ -147,11 +147,11 @@ body {
 
 /* ===== 购买面板（站内支付）===== */
 .buy-panel { margin-bottom: 18px; padding: 14px; background: var(--glass-bg); backdrop-filter: var(--blur-sm); -webkit-backdrop-filter: var(--blur-sm); border: 1px solid var(--glass-border); border-radius: 14px; display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
-.plan-section { margin-bottom: 12px; }
+.plan-section { margin-bottom: 12px; flex: 1 0 100%; }
 .plan-section-title { font-size: 12px; font-weight: 700; color: var(--muted); margin-bottom: 6px; text-transform: uppercase; letter-spacing: 0.05em; }
 .plan-section-title small { font-weight: 400; color: var(--faint); text-transform: none; letter-spacing: 0; }
-.plan-row { display: flex; gap: 8px; }
-.plan-btn { flex: 1; min-width: 96px; cursor: pointer; background: var(--glass-2); border: 1px solid var(--glass-border); border-radius: 12px; padding: 12px; display: flex; flex-direction: column; align-items: center; gap: 4px; transition: transform .1s, box-shadow .15s, border-color .15s; }
+.plan-row { display: flex; gap: 8px; flex-wrap: wrap; }
+.plan-btn { flex: 1; min-width: 64px; cursor: pointer; background: var(--glass-2); border: 1px solid var(--glass-border); border-radius: 12px; padding: 12px; display: flex; flex-direction: column; align-items: center; gap: 4px; transition: transform .1s, box-shadow .15s, border-color .15s; }
 .plan-btn:hover:not(:disabled) { transform: translateY(-2px); border-color: var(--glass-border-strong); box-shadow: 0 4px 18px rgba(91,240,176,.12); }
 .plan-btn:disabled { opacity: .5; cursor: not-allowed; }
 .plan-name { font-size: 14px; font-weight: 700; color: var(--ink); }
@@ -339,6 +339,10 @@ button { cursor: pointer; }
   .controls { flex-direction: column; align-items: stretch; }
   .selectors { justify-content: space-between; }
   .actions { justify-content: flex-end; }
+  .plan-btn { padding: 10px 4px; }
+  .plan-section:nth-child(2) .plan-btn { flex: 0 0 calc(50% - 4px); }
+  .plan-name { font-size: 12.5px; }
+  .plan-price { font-size: 15px; }
 }
 
 /* 毛玻璃在性能弱的设备上可能卡;尊重减少动效偏好 */
