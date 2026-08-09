@@ -37,6 +37,62 @@ def _sentence_ppl(text):
     return math.exp(min(out.loss.item(), 20))  # cap to avoid overflow
 
 
+def _split_sents(text):
+    return [s.strip() for s in re.split(r"[。！？\n;；]+", text) if s.strip()]
+
+
+def _compute_blocks(text, cleaned):
+    """切 ~200 字块并算每块困惑度（复用给聚合 + 逐句，避免重复推理）。
+    返回 (sents, blocks, block_ppls, valid_ppls, sent_ppl):
+      - block_ppls: 每块 ppl（无效为 None），与 blocks 对齐
+      - valid_ppls: 仅有效 ppl 列表（聚合用）
+      - sent_ppl: 每句 → 其所在块的 ppl（无效为 None），逐句着色用
+    """
+    sents = _split_sents(text)
+    blocks, cur = [], ""
+    for s in sents:
+        if cur and len(cur) + len(s) > 200:
+            blocks.append(cur)
+            cur = s
+        else:
+            cur = (cur + s) if cur else s
+    if cur:
+        blocks.append(cur)
+    if not blocks:
+        blocks = [cleaned[:500]]
+
+    block_ppls = []
+    for b in blocks[:10]:
+        p = _sentence_ppl(b)
+        block_ppls.append(p if (p and 0 < p < 1000) else None)
+    while len(block_ppls) < len(blocks):
+        block_ppls.append(None)
+
+    valid_ppls = [p for p in block_ppls if p]
+    sent_ppl = {}
+    for s in sents:
+        for i, b in enumerate(blocks):
+            if s in b:
+                sent_ppl[s] = block_ppls[i] if i < len(block_ppls) else None
+                break
+    return sents, blocks, block_ppls, valid_ppls, sent_ppl
+
+
+def _ppl_to_score(ppl):
+    """困惑度 → AI 概率分段（与 detect_aigc 同口径）。"""
+    if ppl < 12:
+        return 95
+    if ppl < 20:
+        return 78
+    if ppl < 28:
+        return 58
+    if ppl < 40:
+        return 30
+    if ppl < 55:
+        return 15
+    return 8
+
+
 def detect_aigc(text):
     """用困惑度 + 突发性检测 AI 生成内容。返回 0-100 的 AIGC 概率。"""
     text = text or ""
@@ -51,27 +107,7 @@ def detect_aigc(text):
                 "note": "样本过短，无法可靠检测", "signals": [],
                 "perplexity": 0, "burstiness": 0, "sentence_count": 0, "char_count": len(cleaned)}
 
-    # 按较长块算困惑度（不拆短句，避免短句虚高）
-    # 按 ~200 字一块切
-    blocks = []
-    sents = [s.strip() for s in re.split(r"[。！？\n;；]+", text) if s.strip()]
-    cur = ""
-    for s in sents:
-        if cur and len(cur) + len(s) > 200:
-            blocks.append(cur)
-            cur = s
-        else:
-            cur = (cur + s) if cur else s
-    if cur:
-        blocks.append(cur)
-    if not blocks:
-        blocks = [cleaned[:500]]
-
-    ppls = []
-    for b in blocks[:10]:
-        p = _sentence_ppl(b)
-        if p and 0 < p < 1000:
-            ppls.append(p)
+    sents, blocks, block_ppls, ppls, sent_ppl = _compute_blocks(text, cleaned)
 
     if not ppls:
         return {"aigc_score": 50, "verdict": "无法分析", "color": "warn",
@@ -86,20 +122,7 @@ def detect_aigc(text):
     else:
         burstiness = 0.5
 
-    # 困惑度 → AI 概率
-    # 校准基准（本地实测）：AI口语=13, AI学术=18, 人类口语=31, 人类学术=52
-    if avg_ppl < 12:
-        ppl_score = 95
-    elif avg_ppl < 20:
-        ppl_score = 78
-    elif avg_ppl < 28:
-        ppl_score = 58
-    elif avg_ppl < 40:
-        ppl_score = 30
-    elif avg_ppl < 55:
-        ppl_score = 15
-    else:
-        ppl_score = 8
+    ppl_score = _ppl_to_score(avg_ppl)
 
     # 突发性
     if burstiness < 0.2:
@@ -138,4 +161,39 @@ def detect_aigc(text):
         "burstiness": round(burstiness, 2),
         "sentence_count": len(sents),
         "char_count": len(cleaned),
+        "_sent_ppls": sent_ppl,  # 内部字段：逐句 ppl，供 score_sentences_aigc 复用，不入对外响应
     }
+
+
+def score_sentences_aigc(text, sent_ppl=None):
+    """逐句 AIGC 疑似度（报告逐句标色用）。复用 detect_aigc 已算的 sent_ppl，
+    无则自算（会触发 _compute_blocks，模型需已加载）。返回 [{sentence, score, color}]。
+    score 0-100，color: err(≥65)/warn(40-65)/ok(<40)。"""
+    import detectors
+    text = text or ""
+    sents = _split_sents(text)
+    if sent_ppl is None:
+        cleaned = re.sub(r"\s+", "", text)
+        try:
+            _, _, _, _, sent_ppl = _compute_blocks(text, cleaned)
+        except Exception:
+            sent_ppl = {}
+    sent_ppl = sent_ppl or {}
+
+    out = []
+    for s in sents:
+        chars = len(re.sub(r"\s+", "", s))
+        tell = sum(1 for p in detectors.AI_TELL_PHRASES if p in s)
+        tell_dens = tell / max(chars, 1) * 100
+        ppl = sent_ppl.get(s)
+        if ppl and chars >= 8:
+            ppl_score = _ppl_to_score(ppl)
+            heu = min(100, tell_dens * 25 + (15 if tell else 0))
+            score = round(ppl_score * 0.70 + heu * 0.30)
+        else:
+            # 短句 ppl 不可靠：只靠套话启发式
+            score = round(min(100, tell_dens * 30 + (25 if tell else 5)))
+        score = max(3, min(97, score))
+        color = "err" if score >= 65 else ("warn" if score >= 40 else "ok")
+        out.append({"sentence": s, "score": score, "color": color})
+    return out

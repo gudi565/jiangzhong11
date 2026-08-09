@@ -370,3 +370,6 @@ button { cursor: pointer; }
   .pay-modal-body .pay-qr { width: 180px; height: 180px; }
   .pay-modal-card { padding: 26px 18px 20px; }
 }
+
+.report-actions { margin: 14px 0 4px; }
+.report-actions .mini { padding: 7px 16px; }

@@ -74,6 +74,42 @@ function flash(btn, text) {
 
 let currentOutput = "";
 
+// 缓存最近一次结果，供「下载报告」回传给 /api/make-report 排版（不重跑模型）
+let lastReport = null;
+
+const REPORT_NAMES = {
+  rewrite: "降重报告.docx", humanize: "降AIGC报告.docx", english: "英文修改报告.docx",
+  aigc: "AIGC检测报告.docx", plagiarism: "查重报告.docx",
+};
+
+async function downloadReport() {
+  if (!lastReport) return;
+  const btn = $("dl-report") || $("dl-report-aigc") || $("dl-report-plag");
+  try {
+    const r = await fetch("/api/make-report", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(lastReport),
+    });
+    if (r.status === 402) { const d = await r.json(); handleQuotaError(d); return; }
+    if (!r.ok) { let m = "HTTP " + r.status; try { const d = await r.json(); m = d.error || m; } catch {} showError(m); return; }
+    const blob = await r.blob();
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    const cd = r.headers.get("Content-Disposition") || "";
+    let dlName = REPORT_NAMES[lastReport.task] || "报告.docx";
+    const star = cd.match(/filename\*=UTF-8''([^;]+)/);
+    if (star) dlName = decodeURIComponent(star[1]);
+    else { const m = cd.match(/filename="([^"]+)"/); if (m && m[1]) dlName = m[1]; }
+    a.download = dlName;
+    document.body.appendChild(a); a.click(); a.remove();
+    URL.revokeObjectURL(url);
+    if (btn) flash(btn, "已下载");
+  } catch (e) {
+    showError("下载报告失败：" + (e.message || e));
+  }
+}
+
 // ── quota（时间制：active + 剩余秒数）────────────────────────────────────
 function fmtDuration(sec) {
   if (sec <= 0) return "已到期";
@@ -244,6 +280,7 @@ function renderDiag(data) {
 
 function showResult(data, origText) {
   currentOutput = data.rewrite;
+  lastReport = { task, orig_text: origText, result: data };
   document.querySelector(".metrics").style.display = (data.mode === "english" && data.sub === "translate") ? "none" : "";
   $("m-cov").textContent = Math.round(data.coverage * 100) + "%";
   $("m-sim").textContent = Math.round(data.similarity * 100) + "%";
@@ -258,6 +295,7 @@ function showResult(data, origText) {
 function showAigcReport(data) {
   const score = data.aigc_score;
   const color = data.color || "";
+  lastReport = { task: "aigc", orig_text: $("input").value.trim(), result: data };
   $("aigc-score").textContent = score + "%";
   $("aigc-score").className = "gauge-num " + color;
   $("aigc-bar").style.width = score + "%";
@@ -281,6 +319,7 @@ function showAigcReport(data) {
 function showPlagiarismReport(data) {
   const score = data.similarity_score;
   const color = data.color || "";
+  lastReport = { task: "plagiarism", orig_text: $("input").value.trim(), result: data };
   $("plag-score").textContent = score + "%";
   $("plag-score").className = "plag-score " + color;
   $("plag-bar").style.width = score + "%";
@@ -346,6 +385,10 @@ $("file").addEventListener("change", async (e) => {
 });
 
 // ── download ─────────────────────────────────────────────────────────────
+$("dl-report").addEventListener("click", downloadReport);
+$("dl-report-aigc").addEventListener("click", downloadReport);
+$("dl-report-plag").addEventListener("click", downloadReport);
+
 $("download").addEventListener("click", async () => {
   if (!currentOutput) return;
   try {

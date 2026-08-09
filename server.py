@@ -56,7 +56,7 @@ async def cid_middleware(request: Request, call_next):
            or quota.new_client_id())
     request.state.cid = cid
     _EXPENSIVE = {"/api/rewrite", "/api/humanize", "/api/edit-english",
-                  "/api/plagiarism-check", "/api/rewrite-file"}
+                  "/api/plagiarism-check", "/api/rewrite-file", "/api/make-report"}
     if request.url.path in _EXPENSIVE and request.method == "POST":
         rl = _rate_check(request)
         if rl:
@@ -101,6 +101,69 @@ def _rate_check(request, limit=15, window=60):
     if len(_rate_log) > 5000:
         _rate_log.clear()
     return None
+
+
+# ── 逐句打分 helper（报告逐句标色用，不调模型，纯 bigram）───────────────────
+import re as _re
+
+
+def _bg(s):
+    s = _re.sub(r"\s+", "", s)
+    return set(s[i:i + 2] for i in range(len(s) - 1)) if len(s) > 1 else set()
+
+
+def _split_sents(text):
+    return [s.strip() for s in _re.split(r"[。！？\n;；]+", text or "") if s.strip()]
+
+
+def _rewrite_sentence_scores(orig_text, rewritten_text):
+    """逐句「改写后 vs 原文」相似度 → 双栏表右列上色。
+    高=改得不够(红 err)、中=部分残留(橙 warn)、低=改得好(绿 ok)。"""
+    orig_sents = _split_sents(orig_text)
+    orig_whole = _bg(orig_text)
+    out = []
+    for r in _split_sents(rewritten_text):
+        R = _bg(r)
+        best = 0.0
+        for o in orig_sents:
+            O = _bg(o)
+            if R and O:
+                v = len(R & O) / min(len(R), len(O))
+                if v > best:
+                    best = v
+        if best == 0.0 and R and orig_whole:
+            best = len(R & orig_whole) / len(R)
+        score = round(best * 100)
+        color = "err" if best >= 0.55 else ("warn" if best >= 0.30 else "ok")
+        out.append({"sentence": r, "overlap": score, "color": color})
+    return out
+
+
+def _plag_sentence_scores(text, all_matches):
+    """逐句查重命中度 → 正文逐句标色。
+    web 命中=真实 overlap；GLM suspect=标称 60；未命中=0。
+    ≥50 红、30-49 橙、<30 绿。"""
+    by_sent = {}
+    for m in all_matches:
+        key = (m.get("sentence") or "").strip()
+        if key and key not in by_sent:
+            by_sent[key] = m
+    out = []
+    for s in _split_sents(text):
+        m = by_sent.get(s)
+        if m:
+            if (m.get("title") or "").startswith("GLM"):
+                score = 60
+            else:
+                try:
+                    score = int(m.get("overlap", 0))
+                except Exception:
+                    score = 0
+        else:
+            score = 0
+        color = "err" if score >= 50 else ("warn" if score >= 30 else "ok")
+        out.append({"sentence": s, "overlap": score, "color": color})
+    return out
 
 
 @app.get("/")
@@ -168,6 +231,8 @@ def rewrite(req: RewriteReq, request: Request):
     try:
         data = (engine.rewrite_simple(text, req.strength, req.discipline) if req.mode == "simple"
                 else engine.rewrite_pipeline(text, req.strength, req.discipline))
+        data["orig_text"] = text
+        data["sentence_scores"] = _rewrite_sentence_scores(text, data.get("rewrite", ""))
         data["quota"] = quota.consume(request.state.cid)
         return data
     except Exception as e:
@@ -199,6 +264,8 @@ def humanize(req: HumanizeReq, request: Request):
         )
     try:
         data = engine.rewrite_humanize(text, req.strength)
+        data["orig_text"] = text
+        data["sentence_scores"] = _rewrite_sentence_scores(text, data.get("rewrite", ""))
         data["quota"] = quota.consume(request.state.cid)
         return data
     except Exception as e:
@@ -233,6 +300,8 @@ def edit_english(req: EnglishReq, request: Request):
         )
     try:
         data = engine.rewrite_english(text, req.strength, req.sub)
+        data["orig_text"] = text
+        data["sentence_scores"] = _rewrite_sentence_scores(text, data.get("rewrite", ""))
         data["quota"] = quota.consume(request.state.cid)
         return data
     except Exception as e:
@@ -299,6 +368,12 @@ def aigc_check(req: CheckReq, request: Request):
     signals.append({"name": "统计特征", "value": f"{heu_score}%", "score": heu_score,
                     "hint": "套话/句长分析"})
 
+    # 逐句 AIGC 疑似度（报告逐句标色用，复用已加载的 GPT-2，零额外模型开销）
+    try:
+        sentence_scores = ai_detector.score_sentences_aigc(text, gpt2_data.get("_sent_ppls"))
+    except Exception:
+        sentence_scores = []
+
     result = {
         "aigc_score": final,
         "verdict": verdict,
@@ -308,6 +383,7 @@ def aigc_check(req: CheckReq, request: Request):
         "perplexity": gpt2_data.get("perplexity", 0),
         "burstiness": gpt2_data.get("burstiness", 0),
         "glm_reason": glm_reason,
+        "sentence_scores": sentence_scores,
         "sentence_count": gpt2_data.get("sentence_count", 0),
         "char_count": gpt2_data.get("char_count", 0),
         "quota": quota.consume(request.state.cid),
@@ -403,6 +479,7 @@ def plagiarism_check(req: CheckReq, request: Request):
     for m in web_matches:
         all_matches.append(m)
     para_risks = glm_result.get("paragraphs", [])
+    sentence_scores = _plag_sentence_scores(text, all_matches)
     result = {
         "similarity_score": final_score,
         "verdict": verdict,
@@ -410,6 +487,7 @@ def plagiarism_check(req: CheckReq, request: Request):
         "matched_count": len(all_matches),
         "checked_count": web_result.get("checked_count", 0),
         "matches": all_matches[:10],
+        "sentence_scores": sentence_scores,
         "paragraphs": para_risks,
         "glm_reason": glm_result.get("reason", ""),
         "perplexity": 0,
@@ -537,6 +615,49 @@ def make_docx(req: DocReq, request: Request):
     return Response(
         content=blob, media_type=DOCX_MIME,
         headers={"Content-Disposition": 'attachment; filename="rewrite.docx"'},
+    )
+
+
+class ReportReq(BaseModel):
+    task: str
+    orig_text: str = ""
+    result: dict = Field(default_factory=dict)
+
+
+_REPORT_NAMES = {
+    "rewrite": "降重报告",
+    "humanize": "降AIGC报告",
+    "english": "英文修改报告",
+    "aigc": "AIGC检测报告",
+    "plagiarism": "查重报告",
+}
+
+
+@app.post("/api/make-report")
+def make_report(req: ReportReq, request: Request):
+    """生成可编辑 Word 报告（排版已算好的 result，不重跑模型、不扣额度）。
+    客户端把 {task, orig_text, result} 原样回传——result 就是各任务接口已返回的 JSON。"""
+    active, _, _ = quota.is_active(request.state.cid)
+    if not active:
+        return JSONResponse(
+            {"error": "未激活或已到期，请输入兑换码（淘宝购买）。",
+             "quota": quota.get_state_summary(request.state.cid)},
+            status_code=402,
+        )
+    if req.task not in _REPORT_NAMES:
+        return JSONResponse({"error": "task 非法"}, status_code=400)
+    try:
+        blob = docx_io.build_report(req.task, req.orig_text, req.result)
+    except Exception as e:
+        traceback.print_exc()
+        return JSONResponse({"error": f"生成报告失败: {type(e).__name__}: {e}"}, status_code=500)
+    fname = _REPORT_NAMES[req.task] + ".docx"
+    from urllib.parse import quote
+    cd = (f"attachment; filename=\"report.docx\"; "
+          f"filename*=UTF-8''{quote(fname)}")
+    return Response(
+        content=blob, media_type=DOCX_MIME,
+        headers={"Content-Disposition": cd},
     )
 
 
