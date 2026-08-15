@@ -59,7 +59,8 @@ async def cid_middleware(request: Request, call_next):
     request.state.cid = cid
     _EXPENSIVE = {"/api/rewrite", "/api/humanize", "/api/edit-english",
                   "/api/plagiarism-check", "/api/rewrite-file", "/api/make-report",
-                  "/api/report-parse", "/api/report-rewrite"}
+                  "/api/report-parse", "/api/report-rewrite",
+                  "/api/write-outline", "/api/write-generate"}
     if request.url.path in _EXPENSIVE and request.method == "POST":
         rl = _rate_check(request)
         if rl:
@@ -649,6 +650,33 @@ class ReportRewriteReq(BaseModel):
     strength: str = "medium"
 
 
+class WriteOutlineReq(BaseModel):
+    topic: str = Field(...)
+    kind: str = "general"
+    words: int = 2000
+    discipline: str = "auto"
+    notes: str = ""
+
+
+class WriteGenReq(WriteOutlineReq):
+    outline: str = Field(...)
+
+
+def _validate_write(req):
+    topic = (req.topic or "").strip()
+    if not (2 <= len(topic) <= 80):
+        return "题目需 2-80 个字"
+    if req.kind not in engine.WRITE_KIND_INSTR:
+        return "文章类型非法"
+    if not (engine.WRITE_MIN_WORDS <= req.words <= engine.WRITE_MAX_WORDS):
+        return f"目标字数需在 {engine.WRITE_MIN_WORDS}-{engine.WRITE_MAX_WORDS} 之间"
+    if req.discipline not in engine.DISCIPLINE_INSTR:
+        return "discipline 非法"
+    if len(req.notes or "") > 300:
+        return "补充要求不超过 300 字"
+    return None
+
+
 @app.post("/api/report-rewrite")
 def report_rewrite(req: ReportRewriteReq, request: Request):
     """报告降重：只改写 structure 里的标红句，黑字原文零改动。"""
@@ -702,6 +730,59 @@ def report_rewrite(req: ReportRewriteReq, request: Request):
         }
         _save_history(request, "report", orig_full, data)
         return data
+    except Exception as e:
+        return _engine_err(e)
+
+
+@app.post("/api/write-outline")
+def write_outline(req: WriteOutlineReq, request: Request):
+    """AI 写作第一步：生成可编辑大纲。激活用户免费迭代（不 consume）。"""
+    if not engine.KEY:
+        return JSONResponse({"error": "未配置 ZHIPU_API_KEY"}, status_code=500)
+    err = _validate_write(req)
+    if err:
+        return JSONResponse({"error": err}, status_code=400)
+    active, _, _ = quota.is_active(request.state.cid)
+    if not active:
+        return JSONResponse(
+            {"error": "未激活或已到期，请输入兑换码（淘宝购买）。",
+             "quota": quota.get_state_summary(request.state.cid)},
+            status_code=402,
+        )
+    try:
+        out = engine.generate_outline(req.topic.strip(), req.kind, req.words,
+                                      req.discipline, req.notes)
+        return {"ok": True, **out,
+                "note": "大纲可自由编辑（每行一节，格式：标题：要点1；要点2），确认后再生成全文。"}
+    except ValueError as e:
+        return JSONResponse({"error": str(e)}, status_code=400)
+    except Exception as e:
+        return _engine_err(e)
+
+
+@app.post("/api/write-generate")
+def write_generate(req: WriteGenReq, request: Request):
+    """AI 写作第二步：按大纲逐节生成全文（consume 一次）。"""
+    if not engine.KEY:
+        return JSONResponse({"error": "未配置 ZHIPU_API_KEY"}, status_code=500)
+    err = _validate_write(req)
+    if err:
+        return JSONResponse({"error": err}, status_code=400)
+    active, _, _ = quota.is_active(request.state.cid)
+    if not active:
+        return JSONResponse(
+            {"error": "未激活或已到期，请输入兑换码（淘宝购买）。",
+             "quota": quota.get_state_summary(request.state.cid)},
+            status_code=402,
+        )
+    try:
+        data = engine.generate_article(req.topic.strip(), req.kind, req.words,
+                                       req.discipline, req.notes, req.outline)
+        data["quota"] = quota.consume(request.state.cid)
+        _save_history(request, "write", req.topic.strip(), data)
+        return data
+    except ValueError as e:
+        return JSONResponse({"error": str(e)}, status_code=400)
     except Exception as e:
         return _engine_err(e)
 
@@ -762,6 +843,7 @@ _REPORT_NAMES = {
     "aigc": "AIGC检测报告",
     "plagiarism": "查重报告",
     "report": "报告降重报告",
+    "write": "AI写作报告",
 }
 
 

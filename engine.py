@@ -525,3 +525,268 @@ def rewrite_report_sentences(red_sents: list, context_map: dict, strength: str =
         else:
             failed.append(i)  # 保留原句
     return {"rewrites": rewrites, "failed": failed, "batches": len(batches)}
+
+
+# ── AI 写作：大纲 → 逐节全文 ─────────────────────────────────────────────
+WRITE_MIN_WORDS = 500
+WRITE_MAX_WORDS = 8000
+WRITE_MAX_SECTIONS = 12
+WRITE_SECTION_CAP = 1600    # 单节字数上限：chat() 单次尝试 socket 超时 15s，超长生成必失败
+WRITE_SECTION_FLOOR = 200
+WRITE_NOTE = "AI 生成内容仅供写作参考，请自行核对事实与数据后使用。"
+
+WRITE_KIND_INSTR = {
+    "review": "文献综述：围绕主题系统梳理已有研究与观点，按主题/方法/流派分类组织，"
+              "末尾指出研究空白与未来方向；语气客观、重归纳，引述用「有研究指出」「相关调查显示」等泛指表述。",
+    "research": "研究报告：按「背景与问题 → 分析思路 → 主要发现 → 讨论 → 结论建议」组织，"
+                "重逻辑与证据链，结论落在可操作的建议上。",
+    "course": "课程报告：结合课程主题展开理解与思考，理论阐述与个人分析结合，"
+              "语气可带学习心得感，适当联系实际案例。",
+    "speech": "演讲稿：面向听众的口头表达——开场吸引注意，主体展开 2-3 个论点，结尾号召或升华；"
+              "句子偏短、有节奏感，可用少量设问与排比。",
+    "summary": "工作总结：按「总体情况 → 主要做法与成效 → 问题与不足 → 下一步计划」组织，条理清晰。",
+    "general": "通用文章：结构自然，起承转合完整，按题目灵活组织。",
+}
+WRITE_KIND_LABELS = {"review": "文献综述", "research": "研究报告", "course": "课程报告",
+                     "speech": "演讲稿", "summary": "工作总结", "general": "通用文章"}
+
+WRITE_DISCIPLINE_HINT = {
+    "auto": "",
+    "stem": "学科语境为理工科：术语使用准确规范，涉及机制/流程时讲清因果与原理，"
+            "可提及代表性技术方向但不编造具体实验数据。",
+    "humanities": "学科语境为人文社科：论证有观点有层次，可引述公认理论与思潮，概念使用规范。",
+    "medicine": "学科语境为医学/生命科学：表述严谨克制，涉及健康影响的说法留有余地，不给出诊断或用药建议。",
+    "law": "学科语境为法学：可讨论法律问题的一般框架，法条表述谨慎，不给出具体法律意见。",
+}
+
+_OUTLINE_NOISE = re.compile(
+    r"^\s*(?:#{1,4}\s*|\*\*?|[-•·]\s*|第\s*[\d一二三四五六七八九十]{1,3}\s*[章节部分、.．]\s*"
+    r"|[（(]?\s*(?:\d{1,2}|[一二三四五六七八九十]{1,3})\s*[）)]?\s*[、.．]\s*)"
+)
+_FENCE_LINE = re.compile(r"^\s*```")
+
+
+_NUM_PREFIX = re.compile(r"^\s*(?:\d{1,2}|[①②③④⑤⑥⑦⑧⑨⑩]|[一二三四五六七八九十]{1,3})\s*[、.．)）]\s*")
+
+
+def _fold_blocks(text: str) -> list:
+    """把 GLM 的多行块（「标题：」单独一行 + 编号要点行）折叠为标准单行「标题：要点1；要点2」。"""
+    lines = []
+    cur_title, cur_pts = None, []
+
+    def flush():
+        nonlocal cur_title, cur_pts
+        if cur_title is not None:
+            lines.append(cur_title + ("：" + "；".join(cur_pts) if cur_pts else ""))
+        cur_title, cur_pts = None, []
+
+    for raw in (text or "").splitlines():
+        s = raw.strip()
+        if not s or _FENCE_LINE.match(s):
+            flush()
+            continue
+        is_num_item = bool(_NUM_PREFIX.match(s))  # 先判编号——noise 剥离会吃掉 "1. " 前缀
+        s2 = _OUTLINE_NOISE.sub("", s).strip()
+        if not s2:
+            continue
+        m = re.match(r"^(.{1,40}?)\s*[：:]\s*(.*)$", s2)
+        if m and not m.group(2):
+            flush()
+            cur_title = m.group(1).strip()            # 「标题：」块头
+        elif m:
+            flush()
+            lines.append(s2)                           # 标准单行「标题：要点」
+        elif cur_title is not None and is_num_item:
+            cur_pts.append(s2[:60])                    # 块内编号要点
+        else:
+            flush()
+            lines.append(s2)                           # 无冒号独立行
+    flush()
+    return lines
+
+
+def parse_outline(text: str, enforce_limit: bool = True) -> list:
+    """行协议 → [{"title": str, "points": [str]}]。容错解析 GLM 输出与用户手改输入。
+    enforce_limit=False 时跳过节数上限检查（generate_outline 自己截断）。"""
+    sections = []
+    for line in _fold_blocks(text):
+        # 丢弃废话首行（"好的，大纲如下："）
+        if not sections and len(line) < 15 and re.match(r"^(以下|大纲|如下|好的|按照)", line):
+            continue
+        m = re.match(r"^(.{1,40}?)\s*[：:]\s*(.*)$", line)
+        if m:
+            title, rest = m.group(1).strip(), m.group(2).strip()
+        else:
+            title, rest = line, ""
+        title = title.rstrip("：: ")[:40]
+        if not title:
+            continue
+        points = [p.strip()[:60] for p in re.split(r"[;；]", rest) if p.strip()][:6]
+        sections.append({"title": title, "points": points})
+    if not sections:
+        raise ValueError("大纲为空或无法解析，请按「标题：要点1；要点2」格式每行一节填写")
+    if enforce_limit and len(sections) > WRITE_MAX_SECTIONS:
+        raise ValueError(f"大纲超过 {WRITE_MAX_SECTIONS} 节，请精简后重试")
+    return sections
+
+
+def _outline_to_text(sections: list) -> str:
+    return "\n".join(s["title"] + ("：" + "；".join(s["points"]) if s["points"] else "")
+                     for s in sections)
+
+
+def _suggested_sections(words: int) -> int:
+    return max(3, min(8, round(words / 800)))
+
+
+_OUTLINE_SYS = (
+    "你是中文写作助手，帮用户规划文章大纲。只输出大纲本身，不输出任何解释、前言、markdown、代码块。"
+    "行文自称用「本文/这篇文章」，不出现「论文」一词。"
+)
+
+
+def _outline_format_rule(n: int) -> str:
+    return (
+        "输出格式（必须严格遵守）：\n"
+        f"- 每行一节，共 {n} 行，格式：标题：要点1；要点2；要点3\n"
+        "- 每节 3-5 个要点，每个要点不超过 25 字\n"
+        "- 不写序号（一、1. 等）、不写 markdown 符号、不写空行\n"
+        "- 首节通常是引言/背景，末节通常是结语/展望（演讲稿、工作总结按各自类型惯例）"
+    )
+
+
+def _outline_quality_ok(sections: list) -> bool:
+    """格式质量：多数节必须有「标题：要点」结构（有 points）。"""
+    if not sections:
+        return False
+    no_pts = sum(1 for s in sections if not s["points"])
+    return no_pts / len(sections) <= 0.5
+
+
+def generate_outline(topic: str, kind: str, words: int,
+                     discipline: str = "auto", notes: str = "") -> dict:
+    """GLM 生成大纲。返回 {"outline": 标准行协议, "sections": 节数, "suggested": 建议节数}。"""
+    n = _suggested_sections(words)
+    parts = [
+        f"文章题目：{topic}",
+        f"文章类型：{WRITE_KIND_LABELS[kind]}——{WRITE_KIND_INSTR[kind]}",
+        f"总目标字数：约 {words} 字 → 请规划 {n} 节",
+    ]
+    hint = WRITE_DISCIPLINE_HINT.get(discipline, "")
+    if hint:
+        parts.append(f"学科语境：{hint}")
+    if notes and notes.strip():
+        parts.append(f"补充要求：{notes.strip()[:300]}")
+    parts.append(_outline_format_rule(n))
+
+    raw = chat([
+        {"role": "system", "content": _OUTLINE_SYS},
+        {"role": "user", "content": "\n\n".join(parts)},
+    ], temperature=0.5)
+    try:
+        sections = parse_outline(raw, enforce_limit=False)
+        ok = _outline_quality_ok(sections)
+    except ValueError:
+        ok = False
+    if not ok:
+        retry = chat([
+            {"role": "system", "content": _OUTLINE_SYS},
+            {"role": "user", "content": "你上次的输出格式不对（缺少冒号或无法解析）。每行必须形如「标题：要点1；要点2」，"
+                                        "冒号必不可少。\n请严格按格式每行一节输出大纲：\n"
+                                        + _outline_format_rule(n) + "\n\n题目与要求同前：\n" + "\n".join(parts[:4])},
+        ], temperature=0.3)
+        sections = parse_outline(retry, enforce_limit=False)  # 仍失败 → ValueError 冒泡 → server 400
+    # GLM 可能超出建议节数：超出上限截断，超出建议太多截到建议值（保首尾）
+    if len(sections) > n + 2:
+        sections = sections[:n - 1] + sections[-1:]
+    sections = sections[:WRITE_MAX_SECTIONS]
+    return {"outline": _outline_to_text(sections), "sections": len(sections), "suggested": n}
+
+
+def _section_budgets(words: int, n: int) -> list:
+    """总字数 → 每节目标字数。首尾节权重 0.8、中间 1.0，clamp [FLOOR, CAP]。"""
+    weights = [0.8] + [1.0] * (n - 2) + [0.8] if n >= 2 else [1.0]
+    total_w = sum(weights)
+    return [max(WRITE_SECTION_FLOOR, min(WRITE_SECTION_CAP, round(words * w / total_w)))
+            for w in weights]
+
+
+def _write_section(topic: str, kind: str, discipline: str, notes: str,
+                   sections: list, i: int, target: int) -> str:
+    """生成第 i 节（0-based）。前后节标题来自大纲（非生成文本），各节可安全并发。"""
+    sec = sections[i]
+    outline_lines = "\n".join(f"{j + 1}. {s['title']}" for j, s in enumerate(sections))
+    parts = [f"全文大纲（共 {len(sections)} 节）：\n{outline_lines}", ""]
+    parts.append(f"本节任务：写第 {i + 1} 节「{sec['title']}」")
+    if sec["points"]:
+        parts.append(f"本节要点：{'；'.join(sec['points'])}")
+    if i > 0:
+        parts.append(f"上一节：{sections[i - 1]['title']}")
+    if i < len(sections) - 1:
+        parts.append(f"下一节：{sections[i + 1]['title']}")
+    parts.append(f"本节目标字数：约 {target} 字（允许上下浮动 15%，宁可精炼不要注水凑字数）")
+    hint = WRITE_DISCIPLINE_HINT.get(discipline, "")
+    if hint:
+        parts.append(hint)
+    if notes and notes.strip():
+        parts.append(f"补充要求：{notes.strip()[:300]}")
+    parts.append(
+        "\n写作规则：\n"
+        "1. 直接写本节正文，不要重复节标题，不要输出其它节的内容或对其它节的预告"
+        "（末节除外：结语可整体收束）。\n"
+        "2. 分 2-4 个自然段，段落之间空一行；纯文字输出，禁止 markdown、小标题、列表、加粗。\n"
+        "3. 不得编造具体文献引用、真实人名研究结论、精确统计数字；需要佐证时用泛指表述。\n"
+        "4. 行文自称「本文/这篇文章/本报告」，不出现「论文」一词。"
+    )
+    sys_prompt = (
+        f"你是中文写作助手，正在按大纲逐节撰写一篇完整的「{WRITE_KIND_LABELS[kind]}」，"
+        f"题目为「{topic}」。写作风格：简体中文书面语；句长错落自然，"
+        "少用「首先/其次/最后/综上所述」等模板词，避免通篇排比；内容具体、少说空话。只输出本节正文。"
+    )
+    return chat([
+        {"role": "system", "content": sys_prompt},
+        {"role": "user", "content": "\n\n".join(parts)},
+    ], temperature=0.7)
+
+
+def generate_article(topic: str, kind: str, words: int, discipline: str,
+                     notes: str, outline_text: str) -> dict:
+    """逐节并发生成全文。任一节失败整单失败（不产出半篇）。"""
+    sections = parse_outline(outline_text)
+    n = len(sections)
+    min_sections = -(-words // (WRITE_SECTION_CAP + 200))  # ceil
+    if min_sections > n:
+        raise ValueError(f"目标 {words} 字至少需要 {min_sections} 节，请在大纲中增加小节")
+    budgets = _section_budgets(words, n)
+
+    with ThreadPoolExecutor(max_workers=min(3, n)) as ex:
+        futures = [ex.submit(_write_section, topic, kind, discipline, notes, sections, i, budgets[i])
+                   for i in range(n)]
+        texts = [f.result() for f in futures]
+
+    cleaned = []
+    for i, text in enumerate(texts):
+        t = (text or "").strip()
+        # 剥掉模型可能仍输出的首行节标题
+        first_line = t.split("\n", 1)[0].strip()
+        if first_line and similarity(first_line, sections[i]["title"]) > 0.6:
+            t = t.split("\n", 1)[1].strip() if "\n" in t else ""
+        cleaned.append(t)
+
+    full_text = "\n\n".join(cleaned)
+    return {
+        "task": "write",
+        "topic": topic,
+        "kind": kind,
+        "kind_label": WRITE_KIND_LABELS.get(kind, kind),
+        "discipline": discipline,
+        "target_words": words,
+        "actual_words": len(re.sub(r"\s", "", full_text)),
+        "sections_count": n,
+        "sections": [{"title": s["title"],
+                      "text": cleaned[i],
+                      "words": len(re.sub(r"\s", "", cleaned[i]))}
+                     for i, s in enumerate(sections)],
+        "full_text": full_text,
+        "note": WRITE_NOTE,
+    }

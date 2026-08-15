@@ -1,0 +1,306 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<title>降重工具 · 淘宝主图</title>
+<style>
+  :root{
+    --bg:#06140e; --bg2:#0a1f16; --card:#0f2920; --card2:#133328;
+    --accent:#5bf0b0; --accent2:#2dd4a7; --glow:rgba(91,240,176,.32);
+    --text:#e8fff5; --muted:#8fb3a6; --line:rgba(91,240,176,.18);
+    --red:#ff6b6b; --orange:#ffa94d; --green:#51d88a; --gold:#ffd166;
+  }
+  *{margin:0;padding:0;box-sizing:border-box;}
+  html,body{background:#02100a;}
+  body{
+    font-family:"PingFang SC","Hiragino Sans GB","Microsoft YaHei",sans-serif;
+    color:var(--text);
+    display:flex;flex-direction:column;align-items:center;gap:24px;padding:24px;
+  }
+  .poster{
+    width:800px;height:800px;position:relative;overflow:hidden;
+    background:
+      radial-gradient(circle at 78% 22%, var(--glow), transparent 55%),
+      radial-gradient(circle at 15% 85%, rgba(45,212,167,.16), transparent 50%),
+      linear-gradient(160deg,var(--bg) 0%, var(--bg2) 100%);
+    border-radius:4px;
+    padding:52px 56px 38px;
+    display:flex;flex-direction:column;
+  }
+  /* 顶栏 */
+  .top{display:flex;justify-content:space-between;align-items:center;}
+  .brand{display:flex;align-items:center;gap:12px;font-size:24px;font-weight:600;letter-spacing:.5px;}
+  .brand .dot{width:14px;height:14px;border-radius:50%;background:var(--accent);
+    box-shadow:0 0 14px var(--accent),0 0 4px #fff inset;}
+  .badge{font-size:18px;font-weight:600;padding:8px 18px;border-radius:999px;
+    background:rgba(91,240,176,.12);border:1px solid var(--accent);color:var(--accent);}
+  .badge b{color:#fff;}
+
+  /* 主图1 hero */
+  .h1-main{margin-top:48px;font-size:120px;font-weight:800;line-height:1.02;letter-spacing:2px;}
+  .h1-main .grad{background:linear-gradient(120deg,var(--accent),#aaffe0);
+    -webkit-background-clip:text;background-clip:text;color:transparent;
+    filter:drop-shadow(0 0 24px var(--glow));}
+  .h1-sub{font-size:74px;font-weight:800;color:#cfeee0;margin-top:6px;letter-spacing:1px;}
+  .h1-tagline{font-size:30px;color:var(--muted);margin-top:26px;letter-spacing:1px;}
+  .pills{display:flex;gap:16px;margin-top:30px;}
+  .pill{font-size:24px;font-weight:600;padding:12px 24px;border-radius:999px;
+    background:var(--card2);border:1px solid var(--line);color:var(--text);}
+  .pill .em{color:var(--accent);}
+  .h1-bottom{margin-top:auto;display:flex;justify-content:space-between;align-items:flex-end;}
+  .auto-line{font-size:22px;color:var(--muted);letter-spacing:2px;}
+  .price-stamp{
+    width:190px;height:190px;border-radius:50%;
+    background:radial-gradient(circle at 35% 30%,#fff5d6,var(--gold) 60%,#f0b942);
+    color:#5a3a00;display:flex;flex-direction:column;align-items:center;justify-content:center;
+    box-shadow:0 12px 36px rgba(255,209,102,.4),0 0 0 6px rgba(255,209,102,.18);
+    transform:rotate(-6deg);
+  }
+  .price-stamp .from{font-size:22px;font-weight:600;margin-top:18px;}
+  .price-stamp .num{font-size:78px;font-weight:800;line-height:1;font-family:"Inter","SF Pro Display",sans-serif;}
+  .price-stamp .qi{font-size:24px;font-weight:600;margin-bottom:14px;}
+
+  /* 标题条 */
+  .h2-title{font-size:52px;font-weight:800;letter-spacing:1px;}
+  .h2-title .em{color:var(--accent);}
+  .h2-rule{width:80px;height:6px;background:var(--accent);border-radius:3px;margin-top:18px;
+    box-shadow:0 0 12px var(--glow);}
+
+  /* 主图2 功能列表 */
+  .feat-list{margin-top:34px;display:flex;flex-direction:column;gap:14px;flex:1;}
+  .feat{display:flex;align-items:center;gap:20px;padding:16px 22px;border-radius:14px;
+    background:var(--card);border:1px solid var(--line);}
+  .feat-no{width:42px;height:42px;border-radius:10px;flex:none;
+    background:linear-gradient(135deg,var(--accent2),var(--accent));
+    color:#04130c;font-size:24px;font-weight:800;display:flex;align-items:center;justify-content:center;}
+  .feat-name{font-size:30px;font-weight:700;min-width:172px;}
+  .feat-desc{font-size:21px;color:var(--muted);flex:1;}
+
+  /* 主图3 效果 */
+  .eff-wrap{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:8px;}
+  .ring{
+    width:320px;height:320px;border-radius:50%;
+    background:conic-gradient(var(--accent) 0% 75%, rgba(255,255,255,.08) 75% 100%);
+    display:flex;align-items:center;justify-content:center;
+    box-shadow:0 0 60px var(--glow);
+  }
+  .ring-in{width:250px;height:250px;border-radius:50%;background:var(--bg2);
+    display:flex;flex-direction:column;align-items:center;justify-content:center;}
+  .ring-num{font-size:110px;font-weight:800;color:var(--accent);line-height:1;
+    font-family:"Inter","SF Pro Display",sans-serif;}
+  .ring-lab{font-size:24px;color:var(--muted);margin-top:6px;}
+  .cmp{display:flex;gap:28px;margin-top:30px;}
+  .cmp-card{width:300px;background:var(--card);border:1px solid var(--line);border-radius:14px;padding:20px 22px;}
+  .cmp-title{font-size:24px;font-weight:700;margin-bottom:14px;display:flex;justify-content:space-between;}
+  .bars{display:flex;gap:5px;}
+  .bars span{flex:1;height:26px;border-radius:4px;}
+  .bars .r{background:var(--red);} .bars .o{background:var(--orange);} .bars .g{background:var(--green);}
+  .cmp-foot{font-size:18px;color:var(--muted);margin-top:10px;}
+
+  /* 主图4 报告 */
+  .doc-card{margin-top:30px;background:#f7fbf9;border-radius:14px;color:#23342b;
+    box-shadow:0 24px 60px rgba(0,0,0,.45);overflow:hidden;flex:1;display:flex;flex-direction:column;}
+  .doc-head{display:flex;justify-content:space-between;align-items:center;
+    padding:18px 26px;background:#eef7f1;border-bottom:1px solid #d6ebe0;}
+  .doc-head .t{font-size:24px;font-weight:700;color:#0e6b4a;}
+  .doc-head .d{font-size:16px;color:#6b8a7e;}
+  .doc-meta{display:flex;gap:22px;padding:12px 26px;background:#f0f7f3;font-size:18px;border-bottom:1px solid #e0ede6;}
+  .doc-meta b{color:#0e6b4a;}
+  .doc-table{display:grid;grid-template-columns:1fr 1fr;}
+  .doc-th{padding:10px 22px;font-size:17px;font-weight:700;color:#0e6b4a;border-bottom:1px solid #d6ebe0;}
+  .doc-td{padding:13px 22px;font-size:17px;line-height:1.55;border-bottom:1px solid #ecf3ef;}
+  .doc-td.r{color:#c0392b;} .doc-td.g{color:#1a7a32;} .doc-td.o{color:#b86a00;}
+  .doc-td .tag{font-size:14px;}
+  .rep-tags{display:flex;gap:14px;justify-content:center;margin-top:22px;}
+  .rep-tag{font-size:22px;font-weight:600;padding:10px 22px;border-radius:10px;
+    background:var(--card);border:1px solid var(--accent);color:var(--accent);}
+
+  /* 主图5 服务 */
+  .svc-grid{margin-top:40px;display:grid;grid-template-columns:1fr 1fr;gap:26px;flex:1;}
+  .svc{background:var(--card);border:1px solid var(--line);border-radius:18px;
+    display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;padding:24px;}
+  .svc-ico{width:64px;height:64px;border-radius:16px;
+    background:linear-gradient(135deg,rgba(91,240,176,.22),rgba(91,240,176,.06));
+    border:1px solid var(--line);display:flex;align-items:center;justify-content:center;}
+  .svc-ico svg{width:34px;height:34px;stroke:var(--accent);fill:none;stroke-width:2;
+    stroke-linecap:round;stroke-linejoin:round;}
+  .svc-t{font-size:30px;font-weight:700;}
+  .svc-d{font-size:19px;color:var(--muted);}
+  .svc-foot{margin-top:18px;padding:20px 36px;border-radius:14px;
+    background:linear-gradient(120deg,var(--gold),#ffb347);
+    color:#5a3a00;font-size:30px;font-weight:800;text-align:center;letter-spacing:1px;}
+
+  /* 底部小字（主图2/3/4 用） */
+  .foot-line{margin-top:auto;font-size:20px;color:var(--muted);letter-spacing:1px;text-align:center;}
+</style>
+</head>
+<body>
+
+<!-- ============ 主图1 · 核心主视觉 ============ -->
+<section class="poster" id="poster-1">
+  <div class="top">
+    <div class="brand"><span class="dot"></span>原创度工坊</div>
+    <div class="badge"><b>24h</b> 自动发货</div>
+  </div>
+
+  <div class="h1-main"><span class="grad">文章降重</span></div>
+  <div class="h1-sub">降AI率 · 查重</div>
+  <div class="h1-tagline">一站式 AI 文本改写工具 · 多引擎 · 保原意</div>
+
+  <div class="pills">
+    <div class="pill"><span class="em">✓</span> 保原意</div>
+    <div class="pill"><span class="em">✓</span> 保数据</div>
+    <div class="pill"><span class="em">✓</span> 可编辑报告</div>
+  </div>
+
+  <div class="h1-bottom">
+    <div class="auto-line">自动发货 · 秒到账 · 拍下即用</div>
+    <div class="price-stamp">
+      <div class="from">只要</div>
+      <div class="num">9.9</div>
+      <div class="qi">¥ 起</div>
+    </div>
+  </div>
+</section>
+
+<!-- ============ 主图2 · 五大功能 ============ -->
+<section class="poster" id="poster-2">
+  <div class="top">
+    <div class="brand"><span class="dot"></span>原创度工坊</div>
+    <div class="badge">功能齐全</div>
+  </div>
+  <div class="h2-title">5 大功能 <span class="em">一个工具搞定</span></div>
+  <div class="h2-rule"></div>
+
+  <div class="feat-list">
+    <div class="feat"><div class="feat-no">1</div><div class="feat-name">文章降重</div><div class="feat-desc">同义改写 · 保原意保数据保引用</div></div>
+    <div class="feat"><div class="feat-no">2</div><div class="feat-name">降 AI 率</div><div class="feat-desc">去 AI 味 · 人话化改写</div></div>
+    <div class="feat"><div class="feat-no">3</div><div class="feat-name">英文修改</div><div class="feat-desc">润色 / 降重 / 中翻英</div></div>
+    <div class="feat"><div class="feat-no">4</div><div class="feat-name">查 AI 率</div><div class="feat-desc">多引擎 AIGC 检测 · 逐句标色</div></div>
+    <div class="feat"><div class="feat-no">5</div><div class="feat-name">查重</div><div class="feat-desc">原创度分析 · 网络雷同比对</div></div>
+  </div>
+
+  <div class="foot-line">每项都能下载 可编辑 Word 报告 · 全部 ¥9.9 起</div>
+</section>
+
+<!-- ============ 主图3 · 效果对比 ============ -->
+<section class="poster" id="poster-3">
+  <div class="top">
+    <div class="brand"><span class="dot"></span>原创度工坊</div>
+    <div class="badge">效果可见</div>
+  </div>
+  <div class="h2-title">降重效果 <span class="em">一眼看到</span></div>
+  <div class="h2-rule"></div>
+
+  <div class="eff-wrap">
+    <div class="ring">
+      <div class="ring-in">
+        <div class="ring-num">75%</div>
+        <div class="ring-lab">文字改写差异度</div>
+      </div>
+    </div>
+    <div class="cmp">
+      <div class="cmp-card">
+        <div class="cmp-title">原文 <span style="color:var(--red)">雷同高</span></div>
+        <div class="bars"><span class="r"></span><span class="r"></span><span class="r"></span><span class="o"></span><span class="o"></span><span class="g"></span><span class="g"></span></div>
+        <div class="cmp-foot">逐句标红 · 重复密集</div>
+      </div>
+      <div class="cmp-card">
+        <div class="cmp-title">改写后 <span style="color:var(--green)">原创高</span></div>
+        <div class="bars"><span class="g"></span><span class="g"></span><span class="g"></span><span class="g"></span><span class="g"></span><span class="o"></span><span class="r"></span></div>
+        <div class="cmp-foot">逐句标绿 · 已大幅改写</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="foot-line">红 · 橙 · 绿 逐句标色 · 改了多少看得见</div>
+</section>
+
+<!-- ============ 主图4 · 可编辑报告 ============ -->
+<section class="poster" id="poster-4">
+  <div class="top">
+    <div class="brand"><span class="dot"></span>原创度工坊</div>
+    <div class="badge">可编辑报告</div>
+  </div>
+  <div class="h2-title">专业报告 <span class="em">Word 可编辑</span></div>
+  <div class="h2-rule"></div>
+
+  <div class="doc-card">
+    <div class="doc-head">
+      <div class="t">降重工具 · 降重报告</div>
+      <div class="d">生成时间 2026-08-09</div>
+    </div>
+    <div class="doc-meta">
+      <div>改写后字数: <b>428</b></div>
+      <div>差异度: <b>75%</b></div>
+      <div>相似度: <b>25%</b></div>
+    </div>
+    <div class="doc-table">
+      <div class="doc-th">原文</div>
+      <div class="doc-th">改写后</div>
+      <div class="doc-td">随着深度学习技术的快速发展，卷积神经网络取得显著突破。</div>
+      <div class="doc-td g">深度学习近年演进迅猛，卷积网络在诸多任务上实现大幅跃升。<span class="tag">[ok]</span></div>
+      <div class="doc-td">ResNet 通过引入跳跃连接，有效缓解了梯度消失问题。</div>
+      <div class="doc-td r">残差网络借助跨层连结，使深层网络的梯度回传难题得以化解。<span class="tag">[改得不够]</span></div>
+      <div class="doc-td">该方法在 ImageNet 数据集上进行了评估。</div>
+      <div class="doc-td g">所提方法依托 ImageNet 完成了系统评测。<span class="tag">[ok]</span></div>
+    </div>
+  </div>
+
+  <div class="rep-tags">
+    <div class="rep-tag">降重报告</div>
+    <div class="rep-tag">AI 检测报告</div>
+    <div class="rep-tag">查重报告</div>
+  </div>
+  <div class="foot-line">下载即用 · 在 Word 里继续修改</div>
+</section>
+
+<!-- ============ 主图5 · 服务保障 ============ -->
+<section class="poster" id="poster-5">
+  <div class="top">
+    <div class="brand"><span class="dot"></span>原创度工坊</div>
+    <div class="badge">售后无忧</div>
+  </div>
+  <div class="h2-title">自动发货 <span class="em">售后无忧</span></div>
+  <div class="h2-rule"></div>
+
+  <div class="svc-grid">
+    <div class="svc">
+      <div class="svc-ico"><svg viewBox="0 0 24 24"><path d="M13 2 3 14h7l-1 8 10-12h-7z"/></svg></div>
+      <div class="svc-t">24h 自动发货</div>
+      <div class="svc-d">拍下系统秒发，不用等</div>
+    </div>
+    <div class="svc">
+      <div class="svc-ico"><svg viewBox="0 0 24 24"><circle cx="8" cy="15" r="4"/><path d="M10.85 12.15 19 4"/><path d="m18 5 3 3"/><path d="m15 8 3 3"/></svg></div>
+      <div class="svc-t">卡密秒到账</div>
+      <div class="svc-d">兑换码即拍即得</div>
+    </div>
+    <div class="svc">
+      <div class="svc-ico"><svg viewBox="0 0 24 24"><path d="M12 2 4 6v6c0 5 3.5 8 8 10 4.5-2 8-5 8-10V6z"/></svg></div>
+      <div class="svc-t">隐私保护</div>
+      <div class="svc-d">内容不留存不外传</div>
+    </div>
+    <div class="svc">
+      <div class="svc-ico"><svg viewBox="0 0 24 24"><path d="M21 11.5a8.4 8.4 0 0 1-9 8.4 8.4 8.4 0 0 1-8-5.4"/><path d="M3 12.5a8.4 8.4 0 0 1 9-8.4 8.4 8.4 0 0 1 8 5.4"/><path d="M3 4v4h4"/><path d="M21 20v-4h-4"/></svg></div>
+      <div class="svc-t">售后指导</div>
+      <div class="svc-d">不会用随时问</div>
+    </div>
+  </div>
+
+  <div class="svc-foot">¥9.9 起 · 拍下即用 · 自动发货</div>
+</section>
+
+<script>
+(function(){
+  var h = (location.hash.match(/\d+/)||[])[0];
+  if(!h) return;
+  document.querySelectorAll('.poster').forEach(function(p){
+    p.style.display = (p.id === 'poster-'+h) ? '' : 'none';
+  });
+  document.body.style.padding = '0';
+  document.body.style.gap = '0';
+  document.body.style.alignItems = 'stretch';
+})();
+</script>
+</body>
+</html>

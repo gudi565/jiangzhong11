@@ -385,6 +385,50 @@ def _report_report(doc, orig_text, result):
                      "改写结果为 AI 生成，请作者自行核对语义准确性；最终重复率请以官方查重系统复检结果为准。")
 
 
+def _report_write(doc, orig_text, result):
+    """AI 写作报告：品牌头 → 指标 → 大纲 → 分节正文 → 免责。"""
+    sections = result.get("sections") or []
+    _brand_header(doc, "AI 写作报告",
+                  f"类型 {result.get('kind_label', '—')} · {result.get('sections_count', len(sections))} 节")
+    disc = result.get("discipline", "auto")
+    disc_zh = {"auto": "", "stem": "理工", "humanities": "人文社科",
+               "medicine": "医学", "law": "法学"}.get(disc, disc)
+    pairs = [
+        ("题目", result.get("topic", "—")),
+        ("类型", result.get("kind_label", "—")),
+        ("目标字数", result.get("target_words", "—")),
+        ("实际字数", result.get("actual_words", "—")),
+        ("节数", result.get("sections_count", len(sections))),
+    ]
+    if disc_zh:
+        pairs.insert(2, ("学科", disc_zh))
+    _metric_line(doc, pairs)
+    _hr(doc)
+
+    _heading(doc, "大纲", 2)
+    for i, s in enumerate(sections):
+        p = doc.add_paragraph()
+        pts = "；".join(s.get("points", [])) if s.get("points") else ""
+        _add_run(p, f"{i + 1}、{s.get('title', '')}" + (f"（{pts}）" if pts else ""),
+                 color="mute", size=11)
+    _hr(doc)
+
+    title_p = doc.add_paragraph()
+    title_p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    _add_run(title_p, result.get("topic", ""), bold=True, size=16)
+    for i, s in enumerate(sections):
+        _heading(doc, f"{i + 1}、{s.get('title', '')}", 2)
+        for para in (s.get("text") or "").split("\n\n"):
+            if para.strip():
+                p = doc.add_paragraph()
+                _add_run(p, para.strip())
+    _hr(doc)
+
+    _disclaimer(doc, "免责声明：本文章由 AI 写作助手生成，仅供写作参考。内容可能存在事实性偏差或与最新情况不符，"
+                     "其中的数据与观点不构成任何依据，请务必自行核对、修改并补充真实资料后再使用，"
+                     "不得未经核对直接提交或发布。")
+
+
 _build_dispatch = {
     "rewrite": lambda d, o, r: _report_rewrite(d, o, r, "降重报告", "红=改得不够"),
     "humanize": lambda d, o, r: _report_rewrite(d, o, r, "降AIGC报告", "红=AI痕迹仍重"),
@@ -392,4 +436,5 @@ _build_dispatch = {
     "aigc": _report_aigc,
     "plagiarism": _report_plagiarism,
     "report": _report_report,
+    "write": _report_write,
 }

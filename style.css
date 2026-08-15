@@ -402,3 +402,27 @@ button { cursor: pointer; }
 .manual-title { font-weight: 700; font-size: 14px; margin-bottom: 6px; }
 .manual-desc { font-size: 13px; color: var(--muted, #8fb3a6); line-height: 1.6; }
 @media (max-width: 640px) { .manual-card { grid-template-columns: 1fr; } }
+
+/* ── AI 写作 ──────────────────────────────────────────────────── */
+.write-form { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin: 14px 0 4px; }
+.write-field { display: flex; flex-direction: column; gap: 6px; font-size: 12.5px; color: var(--muted, #8fb3a6); font-weight: 600; }
+.write-field.full { grid-column: 1 / -1; }
+.write-field input, .write-field select {
+  font: inherit; font-size: 14px; color: var(--ink, var(--text));
+  padding: 10px 14px; background: rgba(10, 33, 24, 0.55);
+  border: 1px solid var(--glass-border, rgba(255,255,255,.12)); border-radius: 12px; outline: none;
+}
+.write-field input:focus, .write-field select:focus { border-color: var(--accent); box-shadow: 0 0 0 3px rgba(91,240,176,.18); }
+.write-form-actions { display: flex; justify-content: flex-end; }
+.write-outline-head { display: flex; justify-content: space-between; align-items: center; gap: 12px; margin: 16px 0 8px; font-size: 13px; color: var(--muted, #8fb3a6); }
+.write-outline-head b { color: var(--accent); }
+textarea#write-outline { width: 100%; min-height: 190px; resize: vertical; font-size: 14px; line-height: 1.8;
+  padding: 14px 16px; background: rgba(10,33,24,0.55); border: 1px solid var(--glass-border, rgba(255,255,255,.12)); border-radius: 14px;
+  outline: none; color: var(--ink, var(--text)); font-family: inherit; }
+textarea#write-outline:focus { border-color: var(--accent); box-shadow: 0 0 0 3px rgba(91,240,176,.18); }
+.write-article-title { font-size: 19px; margin: 6px 0 12px; }
+.write-section { margin-top: 14px; }
+.write-section h4 { font-size: 14.5px; color: var(--accent); margin: 0 0 8px; font-weight: 700; }
+.write-section .text p { margin: 0 0 10px; }
+.write-result-actions { margin: 12px 0 4px; justify-content: flex-start; flex-wrap: wrap; }
+@media (max-width: 680px) { .write-form { grid-template-columns: 1fr; } .write-outline-head { flex-direction: column; align-items: stretch; } }

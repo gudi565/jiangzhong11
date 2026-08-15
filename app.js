@@ -34,7 +34,7 @@ $("english-mode").addEventListener("click", (e) => {
 
 let task = "rewrite";
 let busy = false;
-const TASK_LABELS = { rewrite: "改写", humanize: "降 AIGC", english: "英文修改", aigc: "查 AIGC 率", plagiarism: "查重", report: "报告降重", history: "历史" };
+const TASK_LABELS = { rewrite: "改写", humanize: "降 AIGC", english: "英文修改", aigc: "查 AIGC 率", plagiarism: "查重", report: "报告降重", write: "AI 写作", history: "历史" };
 document.querySelector(".tabs").addEventListener("click", (e) => {
   const t = e.target.closest(".tab");
   if (!t || t.disabled) return;
@@ -44,7 +44,7 @@ document.querySelector(".tabs").addEventListener("click", (e) => {
   task = t.dataset.task;
   const isRewrite = task === "rewrite";
   const isCheck = task === "aigc" || task === "plagiarism";
-  const isPanelTask = task === "report" || task === "history";
+  const isPanelTask = task === "report" || task === "history" || task === "write";
   document.querySelector(".pipe-toggle").style.display = isRewrite ? "" : "none";
   document.querySelector(".field").style.display = isRewrite ? "" : "none";
   document.getElementById("strength").style.display = isCheck ? "none" : "";
@@ -54,6 +54,7 @@ document.querySelector(".tabs").addEventListener("click", (e) => {
   document.querySelector(".controls").style.display = isPanelTask ? "none" : "";
   document.getElementById("report-panel").hidden = task !== "report";
   document.getElementById("history-panel").hidden = task !== "history";
+  document.getElementById("write-panel").hidden = task !== "write";
   document.getElementById("report-full-wrap").hidden = true;
   if (task === "history") loadHistory();
   $("go").textContent = TASK_LABELS[task] || "改写";
@@ -87,6 +88,7 @@ let lastReport = null;
 const REPORT_NAMES = {
   rewrite: "降重报告.docx", humanize: "降AIGC报告.docx", english: "英文修改报告.docx",
   aigc: "AIGC检测报告.docx", plagiarism: "查重报告.docx", report: "报告降重报告.docx",
+  write: "AI写作报告.docx",
 };
 
 async function downloadReportPayload(payload, btn) {
@@ -289,9 +291,9 @@ function renderDiag(data) {
     (missing.length ? ` <span class="warn">⚠ 仍有标记未保留：${missing.join(", ")}</span>` : "");
 }
 
-function showResult(data, origText) {
+function showResult(data, origText, taskOverride) {
   currentOutput = data.rewrite;
-  lastReport = { task, orig_text: origText, result: data };
+  lastReport = { task: taskOverride || task, orig_text: origText, result: data };
   document.querySelector(".metrics").style.display = (data.mode === "english" && data.sub === "translate") ? "none" : "";
   $("m-cov").textContent = Math.round(data.coverage * 100) + "%";
   $("m-sim").textContent = Math.round(data.similarity * 100) + "%";
@@ -411,6 +413,170 @@ $("copy-full").addEventListener("click", async () => {
 
 $("download-full").addEventListener("click", () => $("download").click());
 
+// ── AI 写作：大纲 → 全文 + 一键降AI联动 ────────────────────────────────────
+const WRITE_KIND_ZH = { review: "文献综述", research: "研究报告", course: "课程报告",
+                        speech: "演讲稿", summary: "工作总结", general: "通用文章" };
+let writeResult = null;
+
+function writeFormPayload() {
+  return {
+    topic: $("write-topic").value.trim(),
+    kind: $("write-kind").value,
+    words: +$("write-words").value,
+    discipline: $("write-discipline").value,
+    notes: $("write-notes").value.trim(),
+  };
+}
+
+$("write-outline-btn").addEventListener("click", async () => {
+  const p = writeFormPayload();
+  if (!p.topic) { showError("请先填写题目"); $("write-topic").focus(); return; }
+  $("err").hidden = true;
+  const btn = $("write-outline-btn");
+  btn.disabled = true; btn.textContent = "大纲生成中…";
+  busy = true; document.querySelector('.tabs').classList.add('locked');
+  try {
+    const r = await fetch("/api/write-outline", {
+      method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(p),
+    });
+    const d = await r.json();
+    if (!r.ok) {
+      if (r.status === 402) handleQuotaError(d);
+      else showError(d.error || ("HTTP " + r.status));
+      return;
+    }
+    $("write-outline").value = d.outline;
+    const mins = Math.max(1, Math.ceil(d.sections * 8 / 3 / 10));
+    $("write-go").textContent = `生成全文（${d.sections} 节，预计 ${mins} 分钟）`;
+    $("write-outline-wrap").hidden = false;
+  } catch (e) {
+    showError(e.message || String(e));
+  } finally {
+    busy = false; document.querySelector('.tabs').classList.remove('locked');
+    btn.disabled = false; btn.textContent = "重新生成大纲";
+  }
+});
+
+$("write-go").addEventListener("click", async () => {
+  const outline = $("write-outline").value.trim();
+  if (!outline) { showError("请先生成或填写大纲"); return; }
+  $("err").hidden = true;
+  const btn = $("write-go");
+  const label = btn.textContent;
+  btn.disabled = true; btn.textContent = "生成中…逐节写作约 1-2 分钟，请勿关闭页面";
+  busy = true; document.querySelector('.tabs').classList.add('locked');
+  const slowTimer = setTimeout(() => { btn.textContent = "生成中…AI 偶尔会慢，马上好"; }, 15000);
+  try {
+    const r = await fetch("/api/write-generate", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ ...writeFormPayload(), outline }),
+    });
+    const data = await r.json();
+    if (!r.ok) {
+      if (r.status === 402) handleQuotaError(data);
+      else showError(data.error || ("HTTP " + r.status));
+      return;
+    }
+    writeResult = data;
+    showWriteResult(data);
+  } catch (e) {
+    showError(e.message || String(e));
+  } finally {
+    clearTimeout(slowTimer);
+    busy = false; document.querySelector('.tabs').classList.remove('locked');
+    btn.disabled = false; btn.textContent = label;
+  }
+});
+
+function showWriteResult(data) {
+  currentOutput = data.full_text || "";
+  lastReport = { task: "write", orig_text: data.topic || "", result: data };
+  $("write-stats").innerHTML =
+    `<span class="pill">类型：${WRITE_KIND_ZH[data.kind] || data.kind}</span>` +
+    `<span class="pill">目标 <b>${data.target_words}</b> 字</span>` +
+    `<span class="pill">实际 <b>${data.actual_words}</b> 字</span>` +
+    `<span class="pill">${data.sections_count} 节</span>`;
+  $("write-title").textContent = data.topic || "";
+  const wrap = $("write-sections");
+  wrap.innerHTML = "";
+  (data.sections || []).forEach((s, i) => {
+    const box = document.createElement("div"); box.className = "write-section";
+    const h = document.createElement("h4"); h.textContent = `${i + 1}、${s.title}`;
+    const body = document.createElement("div"); body.className = "text";
+    (s.text || "").split(/\n\s*\n/).forEach(p => {
+      if (!p.trim()) return;
+      const el = document.createElement("p"); el.textContent = p.trim();
+      body.appendChild(el);
+    });
+    box.append(h, body);
+    wrap.appendChild(box);
+  });
+  $("write-result").hidden = false;
+  $("result").hidden = true;
+  $("check-result").hidden = true;
+  if (data.quota) setQuota(data.quota);
+}
+
+$("write-copy").addEventListener("click", async () => {
+  try { await navigator.clipboard.writeText(currentOutput); flash($("write-copy"), "已复制"); }
+  catch { flash($("write-copy"), "复制失败"); }
+});
+
+$("write-dl-docx").addEventListener("click", async () => {
+  if (!writeResult) return;
+  const t = writeResult;
+  const text = t.topic + "\n\n" +
+    t.sections.map((s, i) => `${i + 1}、${s.title}\n\n${s.text}`).join("\n\n");
+  try {
+    const r = await fetch("/api/make-docx", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ text }),
+    });
+    if (!r.ok) { const d = await r.json(); showError(d.error || ("HTTP " + r.status)); return; }
+    const blob = await r.blob();
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = (t.topic.replace(/[\\/:*?"<>|]/g, "").slice(0, 20) || "AI写作") + ".docx";
+    document.body.appendChild(a); a.click(); a.remove();
+    URL.revokeObjectURL(url);
+  } catch (e) {
+    showError("下载失败：" + (e.message || e));
+  }
+});
+
+$("write-dl-report").addEventListener("click", (e) => {
+  if (lastReport) downloadReportPayload(lastReport, e.currentTarget);
+});
+
+$("write-humanize").addEventListener("click", async () => {
+  if (!writeResult || !currentOutput || busy) return;
+  $("err").hidden = true;
+  const btn = $("write-humanize");
+  const label = btn.textContent;
+  btn.disabled = true; btn.textContent = "降AI处理中…全文改写约 30-60 秒";
+  busy = true; document.querySelector('.tabs').classList.add('locked');
+  try {
+    const r = await fetch("/api/humanize", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ text: currentOutput, strength: "medium" }),
+    });
+    const data = await r.json();
+    if (!r.ok) {
+      if (r.status === 402) handleQuotaError(data);
+      else showError(data.error || ("HTTP " + r.status));
+      return;
+    }
+    $("write-result").hidden = true;
+    showResult(data, writeResult.full_text, "humanize");
+  } catch (e) {
+    showError(e.message || String(e));
+  } finally {
+    busy = false; document.querySelector('.tabs').classList.remove('locked');
+    btn.disabled = false; btn.textContent = label;
+  }
+});
+
 // ── 降重历史 ──────────────────────────────────────────────────────────────
 async function loadHistory() {
   const tbody = $("history-list");
@@ -447,10 +613,11 @@ async function viewHistory(id) {
     if (!r.ok) { showError(rec.error || "记录不存在"); return; }
     const tabBtn = document.querySelector(`.tab[data-task="${rec.task}"]`);
     if (tabBtn && busy === false) tabBtn.click();
-    $("input").value = rec.orig_text || "";
+    if (rec.task !== "write") $("input").value = rec.orig_text || "";
     if (rec.task === "aigc") showAigcReport(rec.result);
     else if (rec.task === "plagiarism") showPlagiarismReport(rec.result);
     else if (rec.task === "report") showReportResult(rec.result);
+    else if (rec.task === "write") showWriteResult(rec.result);
     else showResult(rec.result, rec.orig_text || "");
   } catch (e) {
     showError(e.message || String(e));

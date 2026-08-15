@@ -64,6 +64,7 @@
     <button class="tab" data-task="english" type="button">英文修改</button>
     <button class="tab" data-task="aigc" type="button">查 AIGC</button>
     <button class="tab" data-task="plagiarism" type="button">查重</button>
+    <button class="tab" data-task="write" type="button">AI 写作</button>
     <button class="tab" data-task="report" type="button">报告降重</button>
     <button class="tab" data-task="history" type="button">历史</button>
   </nav>
@@ -156,6 +157,68 @@
       <div class="matches" id="plag-matches"></div>
       <div class="report-actions"><button id="dl-report-plag" type="button" class="primary mini">下载查重报告</button></div>
       <p class="note" id="plag-note"></p>
+    </div>
+  </section>
+
+  <section id="write-panel" hidden>
+    <p class="report-intro">输入题目与要求，AI 先生成<b>可编辑大纲</b>，确认后逐节写出全文；支持一键衔接「降 AIGC」处理。<span class="pill">仅供写作参考</span></p>
+    <div class="write-form">
+      <div class="write-field full"><label>题目</label><input id="write-topic" placeholder="例如：短视频对大学生阅读习惯的影响" maxlength="80" /></div>
+      <div class="write-field"><label>类型</label>
+        <select id="write-kind">
+          <option value="general">通用文章</option>
+          <option value="review">文献综述</option>
+          <option value="research">研究报告</option>
+          <option value="course">课程报告</option>
+          <option value="speech">演讲稿</option>
+          <option value="summary">工作总结</option>
+        </select>
+      </div>
+      <div class="write-field"><label>目标字数</label>
+        <select id="write-words">
+          <option value="1000">1000</option>
+          <option value="1500">1500</option>
+          <option value="2000" selected>2000</option>
+          <option value="3000">3000</option>
+          <option value="4000">4000</option>
+          <option value="5000">5000</option>
+          <option value="6000">6000</option>
+          <option value="8000">8000</option>
+        </select>
+      </div>
+      <div class="write-field"><label>学科</label>
+        <select id="write-discipline">
+          <option value="auto">自动</option>
+          <option value="stem">理工</option>
+          <option value="humanities">人文社科</option>
+          <option value="medicine">医学</option>
+          <option value="law">法学</option>
+        </select>
+      </div>
+      <div class="write-field"><label>补充要求</label><input id="write-notes" placeholder="可选：侧重方向、读者、口吻…" maxlength="300" /></div>
+      <div class="write-field full write-form-actions">
+        <button id="write-outline-btn" type="button" class="ghost">生成大纲</button>
+      </div>
+    </div>
+    <div id="write-outline-wrap" hidden>
+      <div class="write-outline-head">
+        <span>大纲（可自由编辑，每行一节：<b>标题：要点1；要点2</b>）</span>
+        <button id="write-go" type="button" class="primary">生成全文</button>
+      </div>
+      <textarea id="write-outline" rows="8" spellcheck="false"></textarea>
+      <p class="note">生成全文按次计费（时长套餐不限次）；生成期间请勿关闭页面。</p>
+    </div>
+    <div id="write-result" hidden>
+      <div class="report-stats" id="write-stats"></div>
+      <h3 id="write-title" class="write-article-title"></h3>
+      <div class="actions write-result-actions">
+        <button id="write-copy" type="button" class="ghost mini">复制全文</button>
+        <button id="write-dl-docx" type="button" class="ghost mini">下载 Word</button>
+        <button id="write-humanize" type="button" class="primary mini">一键降AI（消耗 1 次）</button>
+        <button id="write-dl-report" type="button" class="ghost mini">下载报告</button>
+      </div>
+      <div id="write-sections"></div>
+      <p class="note">⚠ AI 生成内容仅供写作参考，请自行核对事实、数据与观点后修改使用。</p>
     </div>
   </section>
 
