@@ -6,3 +6,4 @@ __pycache__/
 /tmp/
 .claude/
 降重-*.command
+state.lock

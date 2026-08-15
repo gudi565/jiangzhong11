@@ -64,6 +64,8 @@
     <button class="tab" data-task="english" type="button">英文修改</button>
     <button class="tab" data-task="aigc" type="button">查 AIGC</button>
     <button class="tab" data-task="plagiarism" type="button">查重</button>
+    <button class="tab" data-task="report" type="button">报告降重</button>
+    <button class="tab" data-task="history" type="button">历史</button>
   </nav>
 
   <textarea id="input" placeholder="把需要降重的段落粘贴在这里（最多 20000 字）…"></textarea>
@@ -123,6 +125,11 @@
         <div id="out" class="text"></div>
       </div>
     </div>
+    <div id="report-full-wrap" hidden>
+      <h3>替换后全文 <button id="copy-full" type="button" class="ghost mini">复制</button><button id="download-full" type="button" class="ghost mini">下载 Word</button></h3>
+      <div id="report-full" class="text"></div>
+      <p class="note">标红句已替换、黑字原文原样保留。全文按报告页分段，与原 Word 段落结构可能有差异，粘贴回去后请通读一遍。</p>
+    </div>
     <p class="note">「改写差异度」= 字面改写幅度，对应知网/万方等<b>字面查重率</b>的下降（如差异度 75% ≈ 字面重复率已降 75%）。<br>⚠ 但它<b>不等于</b>本站「查重」分——本站查重引擎测的是<b>AI 模板化程度</b>（语义层），同义改写降不了模板化分，这是两种不同的查重维度，并非降重无效。权威结果请以 <a href="https://cx.cnki.net" target="_blank" rel="noopener">知网 cx.cnki.net</a> 为准。</p>
   </section>
 
@@ -150,6 +157,48 @@
       <div class="report-actions"><button id="dl-report-plag" type="button" class="primary mini">下载查重报告</button></div>
       <p class="note" id="plag-note"></p>
     </div>
+  </section>
+
+  <section id="report-panel" hidden>
+    <p class="report-intro">上传<b>文章查重报告</b>（知网 / 维普 / 万方等导出的 PDF 或 zip），自动识别标红句子，只改写标红部分，黑字原文原样保留。<span class="pill">解析预览免费</span></p>
+    <input type="file" id="report-file" accept=".pdf,.zip" hidden />
+    <div class="actions report-actions-row">
+      <button id="report-upload" type="button" class="ghost">上传报告 PDF / zip</button>
+    </div>
+    <div id="report-preview" hidden>
+      <div class="report-stats"></div>
+      <div class="report-strength-row">
+        <span class="report-strength-label">改写强度</span>
+        <div class="segmented" id="report-strength">
+          <button data-v="light" type="button">轻度</button>
+          <button data-v="medium" type="button" class="active">中度</button>
+          <button data-v="deep" type="button">深度</button>
+        </div>
+      </div>
+      <div id="red-sent-list" class="matches red-sent-list"></div>
+      <div class="actions">
+        <button id="report-go" type="button" class="primary">提交降重</button>
+      </div>
+    </div>
+    <div id="manual-card" class="manual-card">
+      <div class="manual-col">
+        <div class="manual-title">机器降重 · 本站</div>
+        <div class="manual-desc">上传报告即刻处理，AI 只改标红句，按现有额度计费</div>
+      </div>
+      <div class="manual-col manual-hot">
+        <div class="manual-title">人工降重 · 一对一</div>
+        <div class="manual-desc">复杂内容改不动的，联系淘宝客服，专业团队人工精修</div>
+      </div>
+    </div>
+  </section>
+
+  <section id="history-panel" hidden>
+    <div class="history-head"><h3>降重历史</h3><button id="history-refresh" type="button" class="ghost mini">刷新</button></div>
+    <table class="history-table">
+      <thead><tr><th>名称</th><th>类型</th><th>时间</th><th>操作</th></tr></thead>
+      <tbody id="history-list"></tbody>
+    </table>
+    <p class="note">每个浏览器（兑换码账户）保留最近 20 条记录。</p>
   </section>
 </main>
 

@@ -34,7 +34,7 @@ $("english-mode").addEventListener("click", (e) => {
 
 let task = "rewrite";
 let busy = false;
-const TASK_LABELS = { rewrite: "改写", humanize: "降 AIGC", english: "英文修改", aigc: "查 AIGC 率", plagiarism: "查重" };
+const TASK_LABELS = { rewrite: "改写", humanize: "降 AIGC", english: "英文修改", aigc: "查 AIGC 率", plagiarism: "查重", report: "报告降重", history: "历史" };
 document.querySelector(".tabs").addEventListener("click", (e) => {
   const t = e.target.closest(".tab");
   if (!t || t.disabled) return;
@@ -44,11 +44,18 @@ document.querySelector(".tabs").addEventListener("click", (e) => {
   task = t.dataset.task;
   const isRewrite = task === "rewrite";
   const isCheck = task === "aigc" || task === "plagiarism";
+  const isPanelTask = task === "report" || task === "history";
   document.querySelector(".pipe-toggle").style.display = isRewrite ? "" : "none";
   document.querySelector(".field").style.display = isRewrite ? "" : "none";
   document.getElementById("strength").style.display = isCheck ? "none" : "";
   document.getElementById("upload").style.display = isCheck ? "none" : "";
   document.getElementById("english-mode").style.display = (task === "english") ? "" : "none";
+  document.getElementById("input").style.display = isPanelTask ? "none" : "";
+  document.querySelector(".controls").style.display = isPanelTask ? "none" : "";
+  document.getElementById("report-panel").hidden = task !== "report";
+  document.getElementById("history-panel").hidden = task !== "history";
+  document.getElementById("report-full-wrap").hidden = true;
+  if (task === "history") loadHistory();
   $("go").textContent = TASK_LABELS[task] || "改写";
   $("result").hidden = true;
   $("check-result").hidden = true;
@@ -79,16 +86,14 @@ let lastReport = null;
 
 const REPORT_NAMES = {
   rewrite: "降重报告.docx", humanize: "降AIGC报告.docx", english: "英文修改报告.docx",
-  aigc: "AIGC检测报告.docx", plagiarism: "查重报告.docx",
+  aigc: "AIGC检测报告.docx", plagiarism: "查重报告.docx", report: "报告降重报告.docx",
 };
 
-async function downloadReport() {
-  if (!lastReport) return;
-  const btn = $("dl-report") || $("dl-report-aigc") || $("dl-report-plag");
+async function downloadReportPayload(payload, btn) {
   try {
     const r = await fetch("/api/make-report", {
       method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(lastReport),
+      body: JSON.stringify(payload),
     });
     if (r.status === 402) { const d = await r.json(); handleQuotaError(d); return; }
     if (!r.ok) { let m = "HTTP " + r.status; try { const d = await r.json(); m = d.error || m; } catch {} showError(m); return; }
@@ -97,7 +102,7 @@ async function downloadReport() {
     const a = document.createElement("a");
     a.href = url;
     const cd = r.headers.get("Content-Disposition") || "";
-    let dlName = REPORT_NAMES[lastReport.task] || "报告.docx";
+    let dlName = REPORT_NAMES[payload.task] || "报告.docx";
     const star = cd.match(/filename\*=UTF-8''([^;]+)/);
     if (star) dlName = decodeURIComponent(star[1]);
     else { const m = cd.match(/filename="([^"]+)"/); if (m && m[1]) dlName = m[1]; }
@@ -108,6 +113,12 @@ async function downloadReport() {
   } catch (e) {
     showError("下载报告失败：" + (e.message || e));
   }
+}
+
+async function downloadReport() {
+  if (!lastReport) return;
+  const btn = $("dl-report") || $("dl-report-aigc") || $("dl-report-plag");
+  await downloadReportPayload(lastReport, btn);
 }
 
 // ── quota（时间制：active + 剩余秒数）────────────────────────────────────
@@ -290,6 +301,182 @@ function showResult(data, origText) {
   renderText($("out"), data.rewrite, origText);
   renderDiag(data);
   if (data.quota) setQuota(data.quota);
+}
+
+// ── 报告降重：上传 → 解析预览 → 提交改写 → 结果渲染 ───────────────────────
+let reportStructure = null;
+let reportStrength = "medium";
+
+$("report-strength").addEventListener("click", (e) => {
+  const b = e.target.closest("button");
+  if (!b) return;
+  document.querySelectorAll("#report-strength button").forEach((x) => x.classList.remove("active"));
+  b.classList.add("active");
+  reportStrength = b.dataset.v;
+});
+
+$("report-upload").addEventListener("click", () => $("report-file").click());
+$("report-file").addEventListener("change", async (e) => {
+  const f = e.target.files[0];
+  if (!f) return;
+  e.target.value = "";
+  $("err").hidden = true;
+  const btn = $("report-upload");
+  btn.disabled = true; btn.textContent = "解析中…";
+  busy = true; document.querySelector('.tabs').classList.add('locked');
+  try {
+    const fd = new FormData();
+    fd.append("file", f);
+    const r = await fetch("/api/report-parse", { method: "POST", body: fd });
+    const d = await r.json();
+    if (!r.ok) { showError(d.error || ("HTTP " + r.status)); return; }
+    reportStructure = d.structure;
+    const mins = Math.max(1, Math.ceil(d.red_count / 8 / 2 * 0.3));
+    document.querySelector(".report-stats").innerHTML =
+      `<span class="pill">报告来源：${d.brand_guess}</span>` +
+      `<span class="pill">标红 <b>${d.red_count}</b> 句</span>` +
+      `<span class="pill"><b>${d.red_chars}</b> 字需改写</span>` +
+      `<span class="pill">全文 ${d.total_chars} 字</span>` +
+      `<span class="pill">预计 ${mins} 分钟</span>`;
+    $("red-sent-list").innerHTML = d.red_sents.map((s) => `
+      <div class="match">
+        <div class="match-sent">${s.text}</div>
+        <div class="match-meta"><span class="match-ov err">${s.chars} 字</span> · 第 ${s.page || "?"} 页</div>
+      </div>`).join("");
+    $("report-go").textContent = `提交降重（${d.red_count} 句标红，预计 ${mins} 分钟）`;
+    $("report-preview").hidden = false;
+  } catch (err) {
+    showError(err.message || String(err));
+  } finally {
+    busy = false; document.querySelector('.tabs').classList.remove('locked');
+    btn.disabled = false; btn.textContent = "重新上传报告";
+  }
+});
+
+$("report-go").addEventListener("click", async () => {
+  if (!reportStructure) return;
+  $("err").hidden = true;
+  const btn = $("report-go");
+  const label = btn.textContent;
+  btn.disabled = true; btn.textContent = "改写中…标红句逐句处理，请勿关闭页面";
+  busy = true; document.querySelector('.tabs').classList.add('locked');
+  const slowTimer = setTimeout(() => { btn.textContent = "改写中…AI 偶尔会慢，马上好"; }, 8000);
+  try {
+    const r = await fetch("/api/report-rewrite", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ structure: reportStructure, strength: reportStrength }),
+    });
+    const data = await r.json();
+    if (!r.ok) {
+      if (r.status === 402) handleQuotaError(data);
+      else showError(data.error || ("HTTP " + r.status));
+      return;
+    }
+    showReportResult(data);
+  } catch (e) {
+    showError(e.message || String(e));
+  } finally {
+    clearTimeout(slowTimer);
+    busy = false; document.querySelector('.tabs').classList.remove('locked');
+    btn.disabled = false; btn.textContent = label;
+  }
+});
+
+function showReportResult(data) {
+  const origJoined = (data.rewrites || []).map((r) => r.orig).join("\n");
+  const newJoined = (data.rewrites || []).map((r) => r.new).join("\n");
+  currentOutput = data.full_text;
+  lastReport = { task: "report", orig_text: data.orig_text || "", result: data };
+  document.querySelector(".metrics").style.display = "";
+  $("m-cov").textContent = Math.round((data.coverage || 0) * 100) + "%";
+  $("m-sim").textContent = Math.round((data.similarity || 0) * 100) + "%";
+  $("m-len").textContent = `${data.red_chars || 0} 字标红 → 已改 ${((data.rewrites || []).length - (data.failed || []).length)} 句`;
+  $("result").hidden = false;
+  $("check-result").hidden = true;
+  renderText($("orig"), origJoined);
+  renderText($("out"), newJoined, origJoined);
+  $("diag").hidden = true;
+  $("report-full").textContent = data.full_text || "";
+  $("report-full-wrap").hidden = !data.full_text;
+  if (data.quota) setQuota(data.quota);
+  if ((data.failed || []).length) {
+    showError(`有 ${data.failed.length} 句未改成功（已保留原文），可点「提交降重」重试`);
+  }
+}
+
+$("copy-full").addEventListener("click", async () => {
+  try { await navigator.clipboard.writeText(currentOutput); flash($("copy-full"), "已复制"); }
+  catch { flash($("copy-full"), "复制失败"); }
+});
+
+$("download-full").addEventListener("click", () => $("download").click());
+
+// ── 降重历史 ──────────────────────────────────────────────────────────────
+async function loadHistory() {
+  const tbody = $("history-list");
+  tbody.innerHTML = '<tr><td colspan="4" class="history-empty">加载中…</td></tr>';
+  try {
+    const r = await fetch("/api/history");
+    const d = await r.json();
+    if (!r.ok) { tbody.innerHTML = '<tr><td colspan="4" class="history-empty">加载失败</td></tr>'; return; }
+    if (!(d.items || []).length) {
+      tbody.innerHTML = '<tr><td colspan="4" class="history-empty">暂无记录，先去跑一个任务吧</td></tr>';
+      return;
+    }
+    tbody.innerHTML = d.items.map((it) => `
+      <tr>
+        <td class="history-title" title="${it.title}">${it.title}</td>
+        <td><span class="pill">${TASK_LABELS[it.task] || it.task}</span></td>
+        <td class="history-time">${new Date(it.ts * 1000).toLocaleString("zh-CN", { hour12: false })}</td>
+        <td class="history-ops">
+          <button type="button" class="ghost mini" onclick="viewHistory('${it.id}')">查看</button>
+          <button type="button" class="ghost mini" onclick="downloadHistory('${it.id}')">下载报告</button>
+          <button type="button" class="ghost mini" onclick="deleteHistory('${it.id}')">删除</button>
+        </td>
+      </tr>`).join("");
+  } catch (e) {
+    tbody.innerHTML = '<tr><td colspan="4" class="history-empty">加载失败</td></tr>';
+  }
+}
+$("history-refresh").addEventListener("click", loadHistory);
+
+async function viewHistory(id) {
+  try {
+    const r = await fetch(`/api/history/${id}`);
+    const rec = await r.json();
+    if (!r.ok) { showError(rec.error || "记录不存在"); return; }
+    const tabBtn = document.querySelector(`.tab[data-task="${rec.task}"]`);
+    if (tabBtn && busy === false) tabBtn.click();
+    $("input").value = rec.orig_text || "";
+    if (rec.task === "aigc") showAigcReport(rec.result);
+    else if (rec.task === "plagiarism") showPlagiarismReport(rec.result);
+    else if (rec.task === "report") showReportResult(rec.result);
+    else showResult(rec.result, rec.orig_text || "");
+  } catch (e) {
+    showError(e.message || String(e));
+  }
+}
+
+async function downloadHistory(id) {
+  try {
+    const r = await fetch(`/api/history/${id}`);
+    const rec = await r.json();
+    if (!r.ok) { showError(rec.error || "记录不存在"); return; }
+    await downloadReportPayload({ task: rec.task, orig_text: rec.orig_text || "", result: rec.result }, null);
+  } catch (e) {
+    showError(e.message || String(e));
+  }
+}
+
+async function deleteHistory(id) {
+  if (!confirm("确定删除这条记录？")) return;
+  try {
+    const r = await fetch(`/api/history/${id}`, { method: "DELETE" });
+    if (!r.ok) { const d = await r.json(); showError(d.error || "删除失败"); return; }
+    loadHistory();
+  } catch (e) {
+    showError(e.message || String(e));
+  }
 }
 
 function showAigcReport(data) {

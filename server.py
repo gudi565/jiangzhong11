@@ -14,6 +14,8 @@ import engine
 import docx_io
 import quota
 import detectors
+import history
+import pdf_report
 import pay
 import wechatpay
 
@@ -56,7 +58,8 @@ async def cid_middleware(request: Request, call_next):
            or quota.new_client_id())
     request.state.cid = cid
     _EXPENSIVE = {"/api/rewrite", "/api/humanize", "/api/edit-english",
-                  "/api/plagiarism-check", "/api/rewrite-file", "/api/make-report"}
+                  "/api/plagiarism-check", "/api/rewrite-file", "/api/make-report",
+                  "/api/report-parse", "/api/report-rewrite"}
     if request.url.path in _EXPENSIVE and request.method == "POST":
         rl = _rate_check(request)
         if rl:
@@ -84,6 +87,15 @@ def _engine_err(e: Exception):
         return JSONResponse({"error": "AI 服务暂时不可用，请稍后重试"}, status_code=502)
     traceback.print_exc()
     return JSONResponse({"error": f"{type(e).__name__}: {e}"}, status_code=500)
+
+
+def _save_history(request: Request, task: str, orig_text: str, result: dict):
+    """任务成功后落一条历史记录。失败绝不影响主响应。"""
+    try:
+        slim = {k: v for k, v in result.items() if k != "quota"}
+        history.add(request.state.cid, task, orig_text, slim)
+    except Exception:
+        traceback.print_exc()
 
 
 # ── 请求频率限制（防 DoS / 防 GLM 额度被刷）────────────────────────────────
@@ -234,6 +246,7 @@ def rewrite(req: RewriteReq, request: Request):
         data["orig_text"] = text
         data["sentence_scores"] = _rewrite_sentence_scores(text, data.get("rewrite", ""))
         data["quota"] = quota.consume(request.state.cid)
+        _save_history(request, "rewrite", text, data)
         return data
     except Exception as e:
         return _engine_err(e)
@@ -267,6 +280,7 @@ def humanize(req: HumanizeReq, request: Request):
         data["orig_text"] = text
         data["sentence_scores"] = _rewrite_sentence_scores(text, data.get("rewrite", ""))
         data["quota"] = quota.consume(request.state.cid)
+        _save_history(request, "humanize", text, data)
         return data
     except Exception as e:
         return _engine_err(e)
@@ -303,6 +317,7 @@ def edit_english(req: EnglishReq, request: Request):
         data["orig_text"] = text
         data["sentence_scores"] = _rewrite_sentence_scores(text, data.get("rewrite", ""))
         data["quota"] = quota.consume(request.state.cid)
+        _save_history(request, "english", text, data)
         return data
     except Exception as e:
         return _engine_err(e)
@@ -388,6 +403,7 @@ def aigc_check(req: CheckReq, request: Request):
         "char_count": gpt2_data.get("char_count", 0),
         "quota": quota.consume(request.state.cid),
     }
+    _save_history(request, "aigc", text, result)
     return result
 
 
@@ -494,6 +510,7 @@ def plagiarism_check(req: CheckReq, request: Request):
         "note": "三引擎查重：GLM 原创度分析 + 统计特征 + 互联网搜索。综合估算，接近但不等于知网精确查重，仅供参考。",
         "quota": quota.consume(request.state.cid),
     }
+    _save_history(request, "plagiarism", text, result)
     return result
 
 
@@ -591,9 +608,123 @@ async def rewrite_file(
                     else engine.rewrite_pipeline(text, strength, discipline))
         data["orig_text"] = text
         data["quota"] = quota.consume(request.state.cid)
+        _save_history(request, task, text, data)
         return data
     except Exception as e:
         return _engine_err(e)
+
+
+@app.post("/api/report-parse")
+async def report_parse(request: Request, file: UploadFile = File(...)):
+    """查重报告解析（免费预览）：PDF/zip → 标红句列表 + 保偏移结构（供回传）。"""
+    fname = (file.filename or "").lower()
+    if not (fname.endswith(".pdf") or fname.endswith(".zip")):
+        return JSONResponse({"error": "只支持 .pdf / .zip 文件"}, status_code=400)
+    cl = request.headers.get("content-length")
+    if cl and int(cl) > pdf_report.REPORT_FILE_MAX:
+        return JSONResponse({"error": "文件过大（>20MB）"}, status_code=413)
+    raw = await file.read()
+    if len(raw) > pdf_report.REPORT_FILE_MAX:
+        return JSONResponse({"error": "文件过大（>20MB）"}, status_code=413)
+    try:
+        parsed = pdf_report.parse_report(raw)
+    except pdf_report.ReportError as e:
+        return JSONResponse({"error": str(e)}, status_code=400)
+    except Exception as e:
+        traceback.print_exc()
+        return JSONResponse({"error": f"解析失败: {type(e).__name__}: {e}"}, status_code=500)
+    return {
+        "ok": True,
+        "brand_guess": parsed["brand_guess"],
+        "red_count": parsed["red_count"],
+        "red_chars": parsed["red_chars"],
+        "total_chars": parsed["total_chars"],
+        "red_sents": [{"i": s["i"], "text": s["text"], "chars": s["chars"]} for s in parsed["red_sents"]],
+        "structure": parsed,
+    }
+
+
+class ReportRewriteReq(BaseModel):
+    structure: dict = Field(default_factory=dict)
+    strength: str = "medium"
+
+
+@app.post("/api/report-rewrite")
+def report_rewrite(req: ReportRewriteReq, request: Request):
+    """报告降重：只改写 structure 里的标红句，黑字原文零改动。"""
+    if not engine.KEY:
+        return JSONResponse({"error": "未配置 ZHIPU_API_KEY"}, status_code=500)
+    structure = req.structure or {}
+    red_sents = structure.get("red_sents") or []
+    if not structure.get("pages") or not red_sents:
+        return JSONResponse({"error": "报告结构缺失，请重新上传解析"}, status_code=400)
+    if req.strength not in engine.STRENGTH_INSTR:
+        return JSONResponse({"error": "strength 必须是 light / medium / deep"}, status_code=400)
+    active, _, _ = quota.is_active(request.state.cid)
+    if not active:
+        return JSONResponse(
+            {"error": "未激活或已到期，请输入兑换码（淘宝购买）。",
+             "quota": quota.get_state_summary(request.state.cid)},
+            status_code=402,
+        )
+    try:
+        context = pdf_report.build_context(structure)
+        rr = engine.rewrite_report_sentences(red_sents, context, req.strength)
+        orig_full, full_text = pdf_report.apply_rewrites(structure, rr["rewrites"])
+        by_i = {s["i"]: s.get("text", "") for s in red_sents}
+        rewrites = []
+        for s in red_sents:
+            i, orig = s["i"], s.get("text", "")
+            new = rr["rewrites"].get(i, orig)
+            A, B = _bg(orig), _bg(new)
+            overlap = round(len(A & B) / min(len(A), len(B)) * 100) if (A and B) else 0
+            color = "err" if overlap >= 55 else ("warn" if overlap >= 30 else "ok")
+            rewrites.append({"i": i, "orig": orig, "new": new, "color": color, "overlap": overlap})
+        red_orig = "".join(by_i[s["i"]] for s in red_sents)
+        red_new = "".join(rr["rewrites"].get(s["i"], "") for s in red_sents)
+        sim = engine.similarity(red_orig, red_new) if red_new else 1.0
+        data = {
+            "task": "report",
+            "brand_guess": structure.get("brand_guess", "未知来源"),
+            "red_count": len(red_sents),
+            "red_chars": structure.get("red_chars", len(red_orig)),
+            "total_chars": structure.get("total_chars", 0),
+            "rewrites": rewrites,
+            "failed": rr["failed"],
+            "batches": rr["batches"],
+            "orig_text": orig_full,
+            "full_text": full_text,
+            "similarity": round(sim, 3),
+            "coverage": round(1 - sim, 3),
+            "strength": req.strength,
+            "mode": "report",
+            "quota": quota.consume(request.state.cid),
+        }
+        _save_history(request, "report", orig_full, data)
+        return data
+    except Exception as e:
+        return _engine_err(e)
+
+
+@app.get("/api/history")
+def history_list(request: Request):
+    return {"items": history.list_summaries(request.state.cid)}
+
+
+@app.get("/api/history/{hid}")
+def history_get(hid: str, request: Request):
+    rec = history.get(request.state.cid, hid)
+    if not rec:
+        return JSONResponse({"error": "记录不存在"}, status_code=404)
+    return rec
+
+
+@app.delete("/api/history/{hid}")
+def history_delete(hid: str, request: Request):
+    ok = history.delete(request.state.cid, hid)
+    if not ok:
+        return JSONResponse({"error": "记录不存在"}, status_code=404)
+    return {"ok": True}
 
 
 @app.post("/api/make-docx")
@@ -630,6 +761,7 @@ _REPORT_NAMES = {
     "english": "英文修改报告",
     "aigc": "AIGC检测报告",
     "plagiarism": "查重报告",
+    "report": "报告降重报告",
 }
 
 

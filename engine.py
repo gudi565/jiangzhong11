@@ -86,6 +86,19 @@ SYSTEM_FLEX = (
 TEMPERATURE = {"light": 0.3, "medium": 0.7, "deep": 0.95}
 TARGET_SIM = {"light": 0.99, "medium": 0.46, "deep": 0.33}
 
+# ── 查重报告标红句批量改写 ────────────────────────────────────────────────
+REPORT_BATCH_SENTS = 8    # 每批句子数
+REPORT_BATCH_CHARS = 2400  # 每批红句总字数上限（先到先停）
+
+REPORT_INSTR = (
+    "对下列编号句子逐一降重改写。规则：\n"
+    "1. 只改写给出的编号句子，不得增删句子、不得合并或拆分编号。\n"
+    "2. 严格保留原意、数据、引用标记（[1]、（张三，2021））、术语、专有名词。\n"
+    "3. 每句附的「上下文」仅帮助理解代词与逻辑，绝对不要改写或输出上下文。\n"
+    "4. 按所选强度改写句式与用词，降低与原句的字面相似度。\n"
+    '只输出一个 JSON 对象，形如 {"编号":"改写后句子", ...}，包含全部编号，禁止 markdown、禁止解释。'
+)
+
 
 def chat(messages, temperature=0.7) -> str:
     body = json.dumps({
@@ -424,3 +437,91 @@ def rewrite_pipeline(text: str, strength: str, discipline: str = "auto") -> dict
         "stages": stages,
         "diagnostics": diag,
     }
+
+
+def _parse_report_json(raw: str) -> dict:
+    """GLM 输出 → {编号: 改写句}。strip 围栏 + 提取最外层 {} + 容错解析。"""
+    s = raw.strip()
+    if s.startswith("```"):
+        s = re.sub(r"^```[a-zA-Z]*\n?", "", s)
+        s = re.sub(r"\n?```$", "", s)
+    m = re.search(r"\{.*\}", s, flags=re.S)
+    if not m:
+        return {}
+    try:
+        obj = json.loads(m.group(0))
+    except Exception:
+        return {}
+    out = {}
+    if isinstance(obj, dict):
+        for k, v in obj.items():
+            try:
+                out[int(str(k).strip())] = str(v).strip()
+            except (ValueError, TypeError):
+                continue
+    return out
+
+
+def _rewrite_report_batch(batch: list, context_map: dict, strength: str) -> dict:
+    """改一批红句（[{i,text}]），返回 {i: new}。缺号重试 1 次，仍缺抛给上层兜底。"""
+    lines = []
+    for s in batch:
+        ctx = (context_map.get(s["i"]) or "").replace("\n", " ")
+        lines.append(f"【{s['i']}】句子：{s['text']}\n（上下文：{ctx[:160]}）")
+    prompt = "\n\n".join([
+        REPORT_INSTR,
+        STRENGTH_INSTR[strength],
+        "待改写句子：\n" + "\n".join(lines),
+    ])
+    messages = [
+        {"role": "system", "content": SYSTEM},
+        {"role": "user", "content": prompt},
+    ]
+    result = _parse_report_json(chat(messages, temperature=TEMPERATURE.get(strength, 0.7)))
+    missing = [s["i"] for s in batch if s["i"] not in result]
+    if missing:
+        retry = "\n\n".join(
+            f"【{s['i']}】句子：{s['text']}\n（上下文：{(context_map.get(s['i']) or '')[:160]}）"
+            for s in batch if s["i"] in missing
+        )
+        result2 = _parse_report_json(chat([
+            {"role": "system", "content": SYSTEM},
+            {"role": "user", "content": REPORT_INSTR + "\n\n你上次输出缺失了编号 " +
+             ", ".join(str(m) for m in missing) + "，请补全这些编号：\n" + retry},
+        ], temperature=TEMPERATURE.get(strength, 0.7)))
+        result.update(result2)
+    return result
+
+
+def rewrite_report_sentences(red_sents: list, context_map: dict, strength: str = "medium") -> dict:
+    """查重报告标红句批量改写。red_sents=[{i,text}]，context_map={i: 上下文}。
+    返回 {"rewrites": {i: new}, "failed": [i], "batches": n}。
+    失败句（缺号/太短/与原文相同）保留原句并记入 failed，绝不整单失败。"""
+    batches, cur, cur_chars = [], [], 0
+    for s in red_sents:
+        if cur and (len(cur) >= REPORT_BATCH_SENTS or cur_chars >= REPORT_BATCH_CHARS):
+            batches.append(cur)
+            cur, cur_chars = [], 0
+        cur.append(s)
+        cur_chars += len(s.get("text", ""))
+    if cur:
+        batches.append(cur)
+
+    results = [{}] * len(batches)
+    with ThreadPoolExecutor(max_workers=min(2, len(batches))) as ex:
+        futures = [ex.submit(_rewrite_report_batch, b, context_map, strength) for b in batches]
+        results = [f.result() for f in futures]
+
+    merged = {}
+    for r in results:
+        merged.update(r or {})
+
+    rewrites, failed = {}, []
+    for s in red_sents:
+        i, orig = s["i"], s.get("text", "")
+        new = (merged.get(i) or "").strip()
+        if new and len(new) >= 4 and new != orig:
+            rewrites[i] = new
+        else:
+            failed.append(i)  # 保留原句
+    return {"rewrites": rewrites, "failed": failed, "batches": len(batches)}

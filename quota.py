@@ -26,9 +26,12 @@ class _FileLock:
     单用 fcntl 不行——POSIX 下同进程对同一文件的多次 LOCK_EX 不互斥。"""
     _thread_lock = threading.Lock()
 
+    def __init__(self, lock_path=None):
+        self._path = lock_path or LOCK_PATH
+
     def __enter__(self):
         self._thread_lock.acquire()
-        self._f = open(LOCK_PATH, "w")
+        self._f = open(self._path, "w")
         try:
             import fcntl
             fcntl.flock(self._f, fcntl.LOCK_EX)

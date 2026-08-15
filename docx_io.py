@@ -346,10 +346,50 @@ def _report_plagiarism(doc, orig_text, result):
                 "权威查重率请以 cx.cnki.net 官方结果为准。")
 
 
+def _report_report(doc, orig_text, result):
+    """报告降重：品牌头 → 指标 → 标红原文|改写后 双栏表 → 替换后全文 → 免责。"""
+    brand = result.get("brand_guess", "未知来源")
+    rewrites = result.get("rewrites") or []
+    _brand_header(doc, "报告降重报告",
+                  f"报告来源 {brand} · 标红 {result.get('red_count', len(rewrites))} 句 / "
+                  f"{result.get('red_chars', 0)} 字")
+    _metric_line(doc, [
+        ("标红句数", result.get("red_count", len(rewrites))),
+        ("标红字数", result.get("red_chars", 0)),
+        ("全文字数", result.get("total_chars", "—")),
+        ("相似度", f"{round(result.get('similarity', 0) * 100)}%"),
+        ("差异度", f"{round(result.get('coverage', 0) * 100)}%"),
+        ("未改成功", len(result.get("failed") or [])),
+    ])
+    _hr(doc)
+
+    if rewrites:
+        _heading(doc, "标红原文 / 改写后 对照（右列可在 Word 里直接继续修改）", 2)
+        right_items = [{"sentence": r.get("new", ""), "color": r.get("color", "dark"),
+                        "overlap": r.get("overlap")} for r in rewrites]
+        _two_col_table(doc, "标红原文", "改写后",
+                       [r.get("orig", "") for r in rewrites], right_items,
+                       right_hint="红=改得不够")
+        _hr(doc)
+
+    full_text = result.get("full_text", "")
+    if full_text:
+        _heading(doc, "替换后全文（黑字原文原样保留，标红句已替换）", 2)
+        for para in full_text.split("\n"):
+            if para.strip():
+                p = doc.add_paragraph()
+                _add_run(p, para.strip())
+        _hr(doc)
+
+    _disclaimer(doc, "免责声明：本报告仅针对上传查重报告中的标红句子进行改写，黑字部分未做改动。"
+                     "改写结果为 AI 生成，请作者自行核对语义准确性；最终重复率请以官方查重系统复检结果为准。")
+
+
 _build_dispatch = {
     "rewrite": lambda d, o, r: _report_rewrite(d, o, r, "降重报告", "红=改得不够"),
     "humanize": lambda d, o, r: _report_rewrite(d, o, r, "降AIGC报告", "红=AI痕迹仍重"),
     "english": lambda d, o, r: _report_rewrite(d, o, r, "英文修改报告", "红=改动过小"),
     "aigc": _report_aigc,
     "plagiarism": _report_plagiarism,
+    "report": _report_report,
 }

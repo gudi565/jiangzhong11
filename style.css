@@ -373,3 +373,32 @@ button { cursor: pointer; }
 
 .report-actions { margin: 14px 0 4px; }
 .report-actions .mini { padding: 7px 16px; }
+
+/* ── 报告降重 + 历史 + 人工降重卡 ─────────────────────────────── */
+.report-intro { font-size: 15px; line-height: 1.7; color: var(--text); margin: 4px 0 14px; }
+.report-intro b { color: var(--accent); }
+.report-intro .pill { margin-left: 8px; }
+.report-actions-row { margin-bottom: 6px; }
+.report-stats { display: flex; flex-wrap: wrap; gap: 8px; margin: 10px 0 14px; }
+.report-strength-row { display: flex; align-items: center; gap: 12px; margin-bottom: 12px; }
+.report-strength-label { font-size: 13px; color: var(--muted, #8fb3a6); }
+.red-sent-list { max-height: 320px; overflow: auto; margin: 0 0 14px; }
+#report-full-wrap h3 { margin-top: 18px; }
+#report-full { max-height: 420px; overflow: auto; }
+.history-head { display: flex; justify-content: space-between; align-items: center; margin: 8px 0 12px; }
+.history-head h3 { margin: 0; font-size: 17px; }
+.history-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+.history-table th { text-align: left; color: var(--muted, #8fb3a6); font-weight: 500; padding: 8px 10px; border-bottom: 1px solid var(--glass-border, rgba(255,255,255,.12)); }
+.history-table td { padding: 9px 10px; border-bottom: 1px solid var(--glass-border, rgba(255,255,255,.07)); vertical-align: middle; }
+.history-title { max-width: 220px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.history-time { color: var(--muted, #8fb3a6); white-space: nowrap; }
+.history-ops { white-space: nowrap; }
+.history-ops .mini { margin-right: 4px; padding: 4px 10px; }
+.history-empty { text-align: center; color: var(--muted, #8fb3a6); padding: 26px 0 !important; }
+.manual-card { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-top: 18px; }
+.manual-col { background: var(--glass-bg, rgba(255,255,255,.04)); border: 1px solid var(--glass-border, rgba(255,255,255,.12)); border-radius: 12px; padding: 14px 16px; }
+.manual-col.manual-hot { border-color: rgba(255,209,102,.45); }
+.manual-col.manual-hot .manual-title { color: #ffd166; }
+.manual-title { font-weight: 700; font-size: 14px; margin-bottom: 6px; }
+.manual-desc { font-size: 13px; color: var(--muted, #8fb3a6); line-height: 1.6; }
+@media (max-width: 640px) { .manual-card { grid-template-columns: 1fr; } }
