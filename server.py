@@ -60,7 +60,8 @@ async def cid_middleware(request: Request, call_next):
     _EXPENSIVE = {"/api/rewrite", "/api/humanize", "/api/edit-english",
                   "/api/plagiarism-check", "/api/rewrite-file", "/api/make-report",
                   "/api/report-parse", "/api/report-rewrite",
-                  "/api/write-outline", "/api/write-generate"}
+                  "/api/write-outline", "/api/write-generate",
+                  "/api/write-part", "/api/sentence-rewrite"}
     if request.url.path in _EXPENSIVE and request.method == "POST":
         rl = _rate_check(request)
         if rl:
@@ -84,7 +85,8 @@ def _validate_opts(strength, mode, discipline):
 def _engine_err(e: Exception):
     """GLM/网络故障 → 502 + 干净中文；其它异常 → 500（traceback 落日志便于排障）。"""
     msg = str(e)
-    if any(k in msg for k in ("网络", "超时", "GLM", "timed out", "HTTP 4", "HTTP 5", "空内容", "响应结构")):
+    if any(k in msg for k in ("网络", "超时", "GLM", "timed out", "HTTP 4", "HTTP 5", "空内容", "响应结构",
+                              "改写候选")):
         return JSONResponse({"error": "AI 服务暂时不可用，请稍后重试"}, status_code=502)
     traceback.print_exc()
     return JSONResponse({"error": f"{type(e).__name__}: {e}"}, status_code=500)
@@ -662,6 +664,16 @@ class WriteGenReq(WriteOutlineReq):
     outline: str = Field(...)
 
 
+class WritePartReq(BaseModel):
+    part: str = Field(...)
+    topic: str = Field(...)
+    text: str = ""
+
+
+class SentenceRewriteReq(BaseModel):
+    sentence: str = Field(...)
+
+
 def _validate_write(req):
     topic = (req.topic or "").strip()
     if not (2 <= len(topic) <= 80):
@@ -781,6 +793,60 @@ def write_generate(req: WriteGenReq, request: Request):
         data["quota"] = quota.consume(request.state.cid)
         _save_history(request, "write", req.topic.strip(), data)
         return data
+    except ValueError as e:
+        return JSONResponse({"error": str(e)}, status_code=400)
+    except Exception as e:
+        return _engine_err(e)
+
+
+@app.post("/api/write-part")
+def write_part(req: WritePartReq, request: Request):
+    """写作辅助件：摘要/关键词/致谢/开题思路。激活用户免费迭代（不 consume）。"""
+    if not engine.KEY:
+        return JSONResponse({"error": "未配置 ZHIPU_API_KEY"}, status_code=500)
+    if req.part not in engine.PART_KINDS:
+        return JSONResponse({"error": "part 类型非法"}, status_code=400)
+    topic = (req.topic or "").strip()
+    if not (2 <= len(topic) <= 80):
+        return JSONResponse({"error": "题目需 2-80 个字"}, status_code=400)
+    if len(req.text or "") > MAX_CHARS:
+        return JSONResponse({"error": f"正文超出长度限制（>{MAX_CHARS} 字）"}, status_code=413)
+    active, _, _ = quota.is_active(request.state.cid)
+    if not active:
+        return JSONResponse(
+            {"error": "未激活或已到期，请输入兑换码（淘宝购买）。",
+             "quota": quota.get_state_summary(request.state.cid)},
+            status_code=402,
+        )
+    try:
+        out = engine.generate_part(req.part, topic, req.text)
+        return {"ok": True, "part": req.part,
+                "label": engine.PART_KINDS[req.part]["label"], "text": out}
+    except ValueError as e:
+        return JSONResponse({"error": str(e)}, status_code=400)
+    except Exception as e:
+        return _engine_err(e)
+
+
+@app.post("/api/sentence-rewrite")
+def sentence_rewrite(req: SentenceRewriteReq, request: Request):
+    """句级多候选改写（编辑器行内交互，火龙果式）。扣 1 次。"""
+    if not engine.KEY:
+        return JSONResponse({"error": "未配置 ZHIPU_API_KEY"}, status_code=500)
+    s = (req.sentence or "").strip()
+    if not (6 <= len(s) <= 500):
+        return JSONResponse({"error": "句子长度需在 6-500 字之间"}, status_code=400)
+    active, _, _ = quota.is_active(request.state.cid)
+    if not active:
+        return JSONResponse(
+            {"error": "未激活或已到期，请输入兑换码（淘宝购买）。",
+             "quota": quota.get_state_summary(request.state.cid)},
+            status_code=402,
+        )
+    try:
+        cands = engine.rewrite_sentence_candidates(s)
+        return {"ok": True, "sentence": s, "candidates": cands,
+                "quota": quota.consume(request.state.cid)}
     except ValueError as e:
         return JSONResponse({"error": str(e)}, status_code=400)
     except Exception as e:

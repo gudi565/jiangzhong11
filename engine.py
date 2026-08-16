@@ -790,3 +790,89 @@ def generate_article(topic: str, kind: str, words: int, discipline: str,
         "full_text": full_text,
         "note": WRITE_NOTE,
     }
+
+
+# ── 写作辅助件：摘要/致谢生成 + 句级多候选改写 ─────────────────────────────
+PART_KINDS = {
+    "abstract": {
+        "label": "摘要",
+        "instr": ("请为这篇文章写一段中文摘要：概括研究背景、核心内容与结论，"
+                  "150-250 字，一段成文不分点，不出现「本文将」等未来时表述，句末不加引用标记。"),
+    },
+    "keywords": {
+        "label": "关键词",
+        "instr": "请为这篇文章提炼 4-6 个中文关键词，只输出关键词本身，用「；」分隔，一行输出。",
+    },
+    "ack": {
+        "label": "致谢",
+        "instr": ("请以文章作者口吻写一段致谢：感谢指导老师、同学与家人，语气真诚自然不浮夸，"
+                  "不出现具体真实姓名（用「导师」「师门同学」等泛称），120-200 字。"),
+    },
+    "outline_open": {
+        "label": "开题思路",
+        "instr": ("请为这个题目写一段开题思路：研究背景与意义、拟研究的问题、可能的方法路径、"
+                  "预期结论方向，共 200-350 字，分段清晰。"),
+    },
+}
+
+
+def generate_part(part: str, topic: str, full_text: str) -> str:
+    """按类型生成文章附属件（摘要/关键词/致谢/开题思路）。返回纯文本。"""
+    spec = PART_KINDS.get(part)
+    if not spec:
+        raise ValueError("part 类型非法")
+    context = (full_text or "").strip()[:6000] or topic
+    sys_prompt = ("你是中文写作助手，为文章生成附属部分。只输出正文内容本身，"
+                  "不要标题、不要解释、不要 markdown。行文自称「本文/这篇文章」，不出现「论文」一词。")
+    user_prompt = (f"文章题目：{topic}\n\n"
+                   + (f"文章正文（供理解内容，不要照抄）：\n{context}\n\n" if full_text else "")
+                   + f"任务：{spec['instr']}")
+    return chat([
+        {"role": "system", "content": sys_prompt},
+        {"role": "user", "content": user_prompt},
+    ], temperature=0.5).strip()
+
+
+SENT_CAND_SYS = (
+    "你是中文句子改写器。对给定的句子给出若干个不同风格的改写版本。铁律：保留原意、数据、引用标记、术语、"
+    "专有名词；不增删信息。只输出一个 JSON 数组，元素为改写后的句子字符串，禁止 markdown、禁止解释。"
+)
+
+SENT_CAND_N = 3
+
+
+def rewrite_sentence_candidates(sentence: str, n: int = SENT_CAND_N) -> list:
+    """句级多候选改写（编辑器行内交互用）。返回 [{new, sim}]，按与原句差异度降序。"""
+    s = (sentence or "").strip()
+    if len(s) < 6:
+        raise ValueError("句子太短，无需改写")
+    if len(s) > 500:
+        raise ValueError("句子过长，请在段落级改写")
+    raw = chat([
+        {"role": "system", "content": SENT_CAND_SYS},
+        {"role": "user", "content": f"给出 {n} 个改写版本：\n{s}"},
+    ], temperature=0.9)
+    txt = raw.strip()
+    if txt.startswith("```"):
+        txt = re.sub(r"^```[a-zA-Z]*\n?", "", txt)
+        txt = re.sub(r"\n?```$", "", txt)
+    m = re.search(r"\[.*\]", txt, flags=re.S)
+    if not m:
+        raise RuntimeError("改写候选解析失败，请重试")
+    try:
+        arr = json.loads(m.group(0))
+    except Exception:
+        raise RuntimeError("改写候选解析失败，请重试")
+    seen, out = set(), []
+    for item in arr:
+        cand = str(item).strip()
+        if not cand or len(cand) < 4 or cand == s:
+            continue
+        if cand in seen:
+            continue
+        seen.add(cand)
+        out.append({"new": cand, "sim": round(similarity(s, cand), 3)})
+    out.sort(key=lambda x: x["sim"])  # 相似度低 = 改得狠的排前面
+    if not out:
+        raise RuntimeError("改写候选为空，请重试")
+    return out[:n]

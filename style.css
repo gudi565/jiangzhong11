@@ -426,3 +426,49 @@ textarea#write-outline:focus { border-color: var(--accent); box-shadow: 0 0 0 3p
 .write-section .text p { margin: 0 0 10px; }
 .write-result-actions { margin: 12px 0 4px; justify-content: flex-start; flex-wrap: wrap; }
 @media (max-width: 680px) { .write-form { grid-template-columns: 1fr; } .write-outline-head { flex-direction: column; align-items: stretch; } }
+
+/* ── 写作配套件 + 句级改写 popover ─────────────────────────────── */
+.write-part-bar { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin: 14px 0 4px; }
+.write-part-label { font-size: 12.5px; color: var(--muted, #8fb3a6); font-weight: 600; }
+#write-part-result { margin-top: 10px; padding: 14px 16px; background: rgba(10,33,24,0.4);
+  border: 1px solid var(--glass-border, rgba(255,255,255,.12)); border-radius: 14px; }
+.write-part-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; font-weight: 700; font-size: 14px; color: var(--accent); }
+.sent-click { cursor: pointer; border-radius: 3px; padding: 1px 0; transition: background .15s; }
+.sent-click:hover { background: rgba(91,240,176,.16); }
+.sent-click.applied { color: var(--accent); }
+.sent-pop { position: absolute; z-index: 90; background: #0d281e;
+  border: 1px solid var(--accent); border-radius: 14px; box-shadow: 0 18px 50px rgba(0,0,0,.55), 0 0 0 1px rgba(91,240,176,.15);
+  padding: 10px 12px; max-height: 260px; overflow: auto; }
+.sent-pop-head { display: flex; justify-content: space-between; align-items: center; font-size: 13px; font-weight: 700; color: var(--accent); margin-bottom: 8px; }
+.sent-pop-head span:last-child { display: flex; gap: 6px; }
+.sent-pop-item { display: grid; grid-template-columns: 1fr auto; gap: 4px 10px; align-items: center;
+  padding: 10px 10px; border: 1px solid var(--glass-border, rgba(255,255,255,.1)); border-radius: 10px; margin-bottom: 8px; background: rgba(255,255,255,.03); }
+.sent-pop-txt { grid-column: 1 / -1; font-size: 13.5px; line-height: 1.65; }
+.sent-pop-meta { font-size: 12px; color: var(--muted, #8fb3a6); }
+.sent-pop-meta b { color: var(--accent); }
+.sent-pop-loading, .sent-pop-err { font-size: 13px; color: var(--muted, #8fb3a6); padding: 12px 4px; text-align: center; }
+.sent-pop-err { color: var(--err, #ff6b6b); }
+
+/* ── 写作配套件 + 句级改写 popover ─────────────────────────────── */
+.write-part-bar { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; margin: 12px 0 4px; }
+.write-part-label { font-size: 13px; color: var(--muted, #8fb3a6); font-weight: 600; }
+.write-part-result { margin-top: 10px; }
+.write-part-head { display: flex; align-items: center; gap: 10px; font-size: 14px; font-weight: 700; color: var(--accent); margin-bottom: 6px; }
+#write-part-text { font-size: 14px; line-height: 1.9; white-space: pre-wrap; }
+.sent-click { cursor: pointer; border-radius: 4px; transition: background .12s; }
+.sent-click:hover { background: rgba(91, 240, 176, .14); }
+.sent-click.applied { background: rgba(81, 216, 138, .10); box-shadow: inset 0 -1px 0 rgba(81,216,138,.45); }
+.sent-pop { position: absolute; z-index: 300; max-height: 320px; overflow: auto;
+  background: var(--bg2, #0a1f16); border: 1px solid var(--accent); border-radius: 14px;
+  box-shadow: 0 18px 50px rgba(0,0,0,.55), 0 0 0 3px rgba(91,240,176,.10); padding: 10px 12px; }
+.sent-pop-head { display: flex; justify-content: space-between; align-items: center; gap: 8px;
+  font-size: 12.5px; color: var(--muted, #8fb3a6); margin-bottom: 8px; }
+.sent-pop-head span:first-child { font-weight: 700; color: var(--accent); }
+.sent-pop-item { display: flex; flex-direction: column; gap: 6px; padding: 10px 12px; margin-bottom: 8px;
+  background: rgba(255,255,255,.03); border: 1px solid var(--glass-border, rgba(255,255,255,.10)); border-radius: 10px; }
+.sent-pop-txt { font-size: 13.5px; line-height: 1.75; }
+.sent-pop-meta { font-size: 12px; color: var(--muted, #8fb3a6); }
+.sent-pop-meta b { color: var(--accent); }
+.sent-pop-item .primary { align-self: flex-end; }
+.sent-pop-loading, .sent-pop-err { font-size: 13px; color: var(--muted, #8fb3a6); padding: 10px 4px; text-align: center; }
+.sent-pop-err { color: var(--err, #ff6b6b); }

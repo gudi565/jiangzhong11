@@ -489,6 +489,7 @@ $("write-go").addEventListener("click", async () => {
 });
 
 function showWriteResult(data) {
+  writeResult = data;
   currentOutput = data.full_text || "";
   lastReport = { task: "write", orig_text: data.topic || "", result: data };
   $("write-stats").innerHTML =
@@ -505,7 +506,15 @@ function showWriteResult(data) {
     const body = document.createElement("div"); body.className = "text";
     (s.text || "").split(/\n\s*\n/).forEach(p => {
       if (!p.trim()) return;
-      const el = document.createElement("p"); el.textContent = p.trim();
+      const el = document.createElement("p");
+      // 逐句 span：行内改写入口
+      splitSentences(p.trim()).forEach(sent => {
+        const sp = document.createElement("span");
+        sp.className = "sent-click";
+        sp.textContent = sent;
+        sp.dataset.orig = sent;  // 应用改写后按此替换数据层，链式追踪
+        el.appendChild(sp);
+      });
       body.appendChild(el);
     });
     box.append(h, body);
@@ -516,6 +525,147 @@ function showWriteResult(data) {
   $("check-result").hidden = true;
   if (data.quota) setQuota(data.quota);
 }
+
+// ── 配套生成：摘要/关键词/致谢/开题思路 ────────────────────────────────────
+document.querySelectorAll(".write-part-btn").forEach(btn => {
+  btn.addEventListener("click", async () => {
+    if (!writeResult || busy) return;
+    $("err").hidden = true;
+    const part = btn.dataset.part;
+    const old = btn.textContent;
+    btn.disabled = true; btn.textContent = "生成中…";
+    try {
+      const r = await fetch("/api/write-part", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ part, topic: writeResult.topic, text: currentOutput }),
+      });
+      const d = await r.json();
+      if (!r.ok) {
+        if (r.status === 402) handleQuotaError(d);
+        else showError(d.error || ("HTTP " + r.status));
+        return;
+      }
+      $("write-part-name").textContent = d.label;
+      $("write-part-text").textContent = d.text;
+      $("write-part-result").hidden = false;
+    } catch (e) {
+      showError(e.message || String(e));
+    } finally {
+      btn.disabled = false; btn.textContent = old;
+    }
+  });
+});
+
+$("write-part-copy").addEventListener("click", async () => {
+  try { await navigator.clipboard.writeText($("write-part-text").textContent); flash($("write-part-copy"), "已复制"); }
+  catch { flash($("write-part-copy"), "复制失败"); }
+});
+
+// ── 句级改写 popover：点句子 → 多候选 → 换一换/应用 ────────────────────────
+const sentPop = { el: null, span: null, loading: false };
+let sentReqSeq = 0;  // 请求令牌：换句/关弹层后让在飞响应作废，防迟到覆盖串句
+
+function closeSentPop() { sentReqSeq++; $("sent-pop").hidden = true; sentPop.span = null; }
+
+function _applyCandidate(text) {
+  const span = sentPop.span;
+  if (!span) return;
+  const secBody = span.closest(".write-section");
+  const orig = span.dataset.orig || span.textContent;
+  span.textContent = text;
+  span.dataset.orig = text;  // 改后这句成为下次的原句
+  span.classList.add("applied");
+  closeSentPop();
+  if (!secBody || !writeResult) return;
+  const secs = [...document.querySelectorAll("#write-sections .write-section")];
+  const idx = secs.indexOf(secBody);
+  if (idx < 0 || !writeResult.sections[idx]) return;
+  // 数据层同步：在 section.text 里做原句→新句替换（保段落结构），不依赖 innerText 反推
+  const sec = writeResult.sections[idx];
+  if (orig && sec.text.includes(orig)) {
+    sec.text = sec.text.replace(orig, text);
+  } else {
+    sec.text = secBody.querySelector(".text").innerText.trim();  // 兜底
+  }
+  sec.words = sec.text.replace(/\s/g, "").length;
+  writeResult.full_text = writeResult.sections.map(s => s.text).join("\n\n");
+  writeResult.actual_words = writeResult.full_text.replace(/\s/g, "").length;
+  currentOutput = writeResult.full_text;
+  $("write-stats").innerHTML =
+    `<span class="pill">类型：${WRITE_KIND_ZH[writeResult.kind] || writeResult.kind}</span>` +
+    `<span class="pill">目标 <b>${writeResult.target_words}</b> 字</span>` +
+    `<span class="pill">实际 <b>${writeResult.actual_words}</b> 字</span>` +
+    `<span class="pill">${writeResult.sections_count} 节</span>`;
+  lastReport = { task: "write", orig_text: writeResult.topic, result: writeResult };
+}
+
+async function _loadCandidates(sentence) {
+  const my = ++sentReqSeq;
+  const list = $("sent-pop-list");
+  list.innerHTML = '<div class="sent-pop-loading">生成中…（约 3-8 秒）</div>';
+  try {
+    const r = await fetch("/api/sentence-rewrite", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ sentence }),
+    });
+    const d = await r.json();
+    if (my !== sentReqSeq) return;  // 迟到响应：用户已换句/关弹层，丢弃
+    if (!r.ok) {
+      if (r.status === 402) handleQuotaError(d);
+      else list.innerHTML = `<div class="sent-pop-err">${d.error || "生成失败，请重试"}</div>`;
+      return;
+    }
+    if (d.quota) setQuota(d.quota);
+    list.innerHTML = "";
+    d.candidates.forEach((c) => {
+      const item = document.createElement("div");
+      item.className = "sent-pop-item";
+      const txt = document.createElement("div");
+      txt.className = "sent-pop-txt"; txt.textContent = c.new;
+      const meta = document.createElement("div");
+      meta.className = "sent-pop-meta";
+      meta.innerHTML = `改写幅度 <b>${Math.max(0, 100 - Math.round(c.sim * 100))}%</b>`;
+      const use = document.createElement("button");
+      use.type = "button"; use.className = "primary mini"; use.textContent = "应用";
+      use.addEventListener("click", () => _applyCandidate(c.new));
+      item.append(txt, meta, use);
+      list.appendChild(item);
+    });
+  } catch (e) {
+    if (my === sentReqSeq) list.innerHTML = `<div class="sent-pop-err">${e.message || String(e)}</div>`;
+  }
+}
+
+document.addEventListener("click", (e) => {
+  const sp = e.target.closest(".sent-click");
+  if (!sp) {
+    if (!e.target.closest("#sent-pop")) closeSentPop();
+    return;
+  }
+  if (!writeResult || busy) return;
+  if (sentPop.span === sp) { closeSentPop(); return; }
+  sentReqSeq++;  // 换锚：作废上一个在飞请求
+  sentPop.span = sp;
+  const pop = $("sent-pop");
+  const rect = sp.getBoundingClientRect();
+  pop.hidden = false;
+  const pw = Math.min(560, window.innerWidth - 24);
+  pop.style.width = pw + "px";
+  const popH = pop.offsetHeight;
+  let left = Math.max(12, Math.min(rect.left + window.scrollX, window.scrollX + window.innerWidth - pw - 12));
+  let top = rect.bottom + window.scrollY + 8;
+  if (top + popH + 12 > window.scrollY + document.documentElement.clientHeight) {
+    top = Math.max(window.scrollY + 8, rect.top + window.scrollY - popH - 8);  // 下放不下→上翻
+  }
+  pop.style.left = left + "px";
+  pop.style.top = top + "px";
+  _loadCandidates(sp.dataset.orig || sp.textContent);
+});
+
+$("sent-pop-close").addEventListener("click", closeSentPop);
+$("sent-pop-refresh").addEventListener("click", () => {
+  if (sentPop.span) _loadCandidates(sentPop.span.textContent, true);
+});
 
 $("write-copy").addEventListener("click", async () => {
   try { await navigator.clipboard.writeText(currentOutput); flash($("write-copy"), "已复制"); }

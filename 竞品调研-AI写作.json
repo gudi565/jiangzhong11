@@ -1,0 +1,134 @@
+{
+ "caveats": "覆盖缺口（最大限制）：研究问题列出约10个平台，仅笔杆网、PaperPass、火龙果三家的功能与定价获一手验证；万方、维普、格子达、大雅、秘塔写作猫、准达完全没有确认结论，PaperYY 仅在笔杆网验证中顺带获得子应用证据（题目优先+设字数选提纲），其完整功能矩阵与定价未知。两条 claim 被对抗验证否决，报告中不应再使用：笔杆网在线写作页「表单驱动多步录入（选论文类型/学历/填导师/中图分类号等）」0-3 被毙；火龙果「唯一盈利方式是会员费/校对可查一百多种错误」1-2 被毙。厂商宣称数字（PaperPass transformer 降重通顺度提升45%）无方法论与独立验证，只能作为营销话术引用。火龙果 help_pc.html 手册截图文件名显示约 2022-02 成文，其交互描述可能滞后于 2026 年当前客户端；会员权益页与灵感页则为 2026 现况。笔杆网导航实为 15 个工具（claim 漏数基金分析）；写作单次消耗的积分数值与元/积分充值汇率在客户端模板中不可观察；笔杆文献搜索「0全部/1期刊/2论文」参数映射与摘要英译的 UI 调用方未获证实。验证期间 WebSearch 配额耗尽（至 2026-08-25），全部验证依赖各平台官网一手页面，无第三方交叉核对。所有定价与页面为 2026-08-16 快照，厂商随时可能调整。另外，jiangzhong 本地代码树（~/development/jiangzhong）当前仅含降重管线，「现有三步写作流程」的前提来自调研简报而非磁盘代码。",
+ "findings": [
+  {
+   "claim": "笔杆网（与 PaperYY 同属武汉莱博信息技术）将写作做成独立全流程产品 write.bigan.net（导航仅创作台/APP下载/会员中心，首页入口「开始创作」「AI一键初稿」），核心生成交互为「输入题目(5-80字)→recommendOutline 生成5张提纲卡片轮播→点『开始写作』outline-create 按提纲创建论文进入编辑器(/editor)」，辅以编辑器内思路推荐（「光标处于正文处使用推荐思路」，VIP权益列『智能生成提纲/推荐思路不受限制』）与首页宣称的句子补写；该流程与 jiangzhong 现有三步实现同构，PaperYY 写作子应用「小微智能ai论文写作」同样呈题目优先+设字数选提纲，而 PaperPass 公开站无任何写作模块——说明「题目→提纲→生成」是提供写作模块平台的标配，但并非所有查重平台都做写作。",
+   "confidence": "high",
+   "evidence": "代码级验证(2026-08-16)：app bundle 定义 recommendOutline→POST /write-api/api/recommend/outline 与 outlineCreate→POST /write-api/api/office/article/outline-create 两个串联接口；首页文案「只需一秒，生成多个推荐思路、提纲推荐、句子补写」逐字在 chunk 8；chunk 19 有「光标处于正文处使用推荐思路」面板状态；PaperYY 子应用(apmq2k.checkmore.net)独立复现题目优先+设字数选提纲流程；反例边界：PaperPass 全站无写作产品(/writing、/ai-writing 均 404)。注意「句子级补写」仅见于首页文案，无独立产品代码证据。",
+   "sources": [
+    "https://write.bigan.net/"
+   ],
+   "vote": "3-0"
+  },
+  {
+   "claim": "笔杆网写作台已上线约13项辅助写作功能，是三平台中实测最全的写作功能矩阵：摘要/致谢按类型推荐(type 1=摘要/2=致谢)、摘要中英互译、全文翻译、论文模板库(封面卡片式)、图片OCR识别、素材推荐与一键采纳、学术文献搜索与文献引用导出(全部采用/部分采用插入引文)、带标签的资料收藏与笔记、历史版本管理与恢复、字数同步、docx导入与Word/PDF导出，编辑器基于 OnlyOffice。",
+   "confidence": "high",
+   "evidence": "对照 live webpack chunks + 公开 .js.map 逐一确认：getsummary({title,type:1})「//推荐摘要」、type:2「//推荐致谢」hit write-api/api/recommend/summary；office/article/translate(侧栏「学术翻译」)、template-list/template-create、ocr+ocr/get-oss-info(「图片转文字」)、material/search+adopt-material、search/ref-export+addArticleCitations、collect/note(含label-add)、get-history-list+「恢复该版本」按钮、sync-wordcount、import accept=.doc,.docx、exportList ['PDF','Word']、OnlyOffice(office-editors.paperyy.com)。未证实细节：文献搜索「0全部/1期刊/2论文」参数映射、summary-en 的 UI 调用方（两处括号细节，不影响矩阵主体）。",
+   "sources": [
+    "https://write.bigan.net/"
+   ],
+   "vote": "3-0"
+  },
+  {
+   "claim": "笔杆网将查重/纠错/降重原生内嵌于写作台而非外链独立站：前端暴露 check/submit、check/check-limit、correct/submit 及一组共享 limit-info/submit/list/down-url 接口组(office/{article-check|article-reduce|article-correct}/...)，三类服务在创作台内以当前文章 articleId 为键按次数限额提交，可站内查看/下载报告（降重记录行显示重复率+查看报告+下载结果按钮），形成写作-查重-降重闭环；查重引擎由同集团 PaperYY 提供技术支持。",
+   "confidence": "high",
+   "evidence": "生产代码确认 endpoint map：correct/correctlist/checkSubmit/checkLimit/check detail|list|cancel|real-drop + limitinfo/submitinfo/listinfo/getdownUrl 模板化路由（base write-api/api/office/ + 服务名插值）；写作台 chunk 渲染 article-check=「查重/论文查重」、article-reduce=「降重/自动降重」、article-correct=「纠错/智能纠错」并 submitinfo(comtype,{articleId:this.key})；limit-info 返回 vip/remainNum/totalNum；live probe https://write.bigan.net/write-api/api/office/article-check/limit-info 返回 {code:401,msg:token is expired}（路由真实在线、鉴权门控）。",
+   "sources": [
+    "https://write.bigan.net/"
+   ],
+   "vote": "3-0"
+  },
+  {
+   "claim": "笔杆网写作按积分计费而非按千字人民币标价：提交写作消耗 needPoints 积分，余额不足需充值，支持折扣码抵扣；对高校图书馆等机构用户采用每天免费N次或每账号N次免费配额（提示「请联系图书馆老师续费开通」），用完可「继续支付」。写作嵌在全链条工具矩阵（选题分析/提纲推荐/资料搜集/在线写作/论文纠错/论文查重/论文降重/参考文献/AIGC检测/AIGC降重/PDF转换/期刊分析/投稿指南/论文排版，实为15项含基金分析）中，与查重(1.5积分/千字)、智能降重(5积分/千字)、AIGC检测(1500积分)共享同一 userPoints 积分体系。",
+   "confidence": "high",
+   "evidence": "writing 页支付弹窗模板逐字：「写作需 {$T.needPoints} 积分，您共有 {$T.userPoints} 积分 余额不足，请充值 有折扣码」+ coupon-list；-2003/-2004 机构配额错误态含「继续支付」；「千字」在写作页零出现、无¥标价；/check/ 页「1.5积分/千字」「智能降重（5积分/千字）」、/aigc/ 页「共计消费：1500积分」共用同一 userPoints 余额；导航实测15工具，claim 的「14个」为漏数（低估而非高估）。",
+   "sources": [
+    "https://www.bigan.net/writing/",
+    "https://www.bigan.net/check/",
+    "https://www.bigan.net/aigc/"
+   ],
+   "vote": "3-0"
+  },
+  {
+   "claim": "PaperPass 完全没有全文 AI 写作模块：官网（桌面+移动端）无大纲生成/分章生成/续写/扩写/开题报告等任何写作产品，「论文写作」字样仅指向SEO知识栏目；其「AI智能工具」仅格式检测、AI生成答辩PPT、学术配图、PDF转Word 四项辅助工具。核心写作相关 AI 是句子级改写降重：智能降重 3元/千字，宣称基于 transformer attention 机制、降重通顺度较上一代提升45%（厂商营销数字，无独立验证）。",
+   "confidence": "high",
+   "evidence": "2026-08-16 实抓首页 44.2KB：「AI写作/智能写作/大纲/开题/续写/扩写/润色」关键词全部 0 命中；AI智能工具 ul 恰好四项(格式检测/ai-ppt/学术配图/PDF转Word)后即闭合；sitemap 4139 条 URL 无写作产品页；16个候选写作 URL(/ai-write、/outline、/xuxie 等)全部 404 而已知产品页均 200；reduce-repeat 页逐字「基于transformer的attention机制实现降重模型…提升45%」「自动改写重复率高的语句」。",
+   "sources": [
+    "https://www.paperpass.com/",
+    "https://www.paperpass.com/reduce-repeat"
+   ],
+   "vote": "3-0"
+  },
+  {
+   "claim": "PaperPass AI答辩PPT 是文档驱动式生成而非题目驱动写作：流程为上传论文Word(仅docx/doc、<50M、<6万字，上传为强制项)→确认标题→选学历(大专/本科/硕士)→选版本→一次性批量生成(付费后约10分钟、一般30分钟内交付)，全程无大纲编辑或逐章生成环节；双档打包：标准版仅PPT，专业版(页标「荐」)加答辩稿+演讲备注+答辩问答+答辩技巧四项周边交付物；定价按篇分学历一次性计费：标准版 大专¥29/本科¥39/硕士¥49，专业版 大专¥69/本科¥79/硕士¥89(JSON-LD unitText=每篇)，非按千字或会员制。",
+   "confidence": "high",
+   "evidence": "页面与 /js/vue/ppt.js 逐字验证：上传限制文案、「确认标题/选择学历 大专 本科 硕士」「版本选择 标准版 仅含PPT / 专业版 荐 PPT+答辩稿+演讲备注+答辩问答+答辩技巧」；控制器强制校验「论文内容不能为空，请先上传论文！」，grep 大纲/逐章/章节/outline/chapter=0 命中；JSON-LD OfferCatalog 六档价格+「unitText:每篇」；getAiPptCost() POST {education,ver} 到 /tools/ai-ppt/get-cost 按学历×版本取价、余额抵扣后扫码支付。小注：第六档 JSON-LD 名称仅「专业版」，专业版硕士¥89 为按学历结构推定。",
+   "sources": [
+    "https://www.paperpass.com/ai-ppt"
+   ],
+   "vote": "3-0"
+  },
+  {
+   "claim": "PaperPass 智能降AIGC 按千字 5 元定价，较智能降重 3 元/千字溢价约 1.67 倍（「降AI率」被单独定价且更贵）；其交互提供两种输入模式——原文上传/粘贴(docx/doc≤30M)，或上传第三方品牌 AIGC 检测报告(zip/pdf≤30M，先选报告品牌，页面明示勿传原文)——属「检测报告驱动改写」的差异化流程；PaperPass 自家报告用户则从查看报告页对应论文的降AIGC按钮进入。",
+   "confidence": "high",
+   "evidence": "2026-08-16 实抓：同页并列「智能降重 3元/千字…智能降AIGC 5元/千字」；JSON-LD {name:智能降AIGC,price:5,unitText:每千字}；页面双tab「原文上传/粘贴」与「AIGC检测报告上传」+「选择报告品牌」下拉在前+警示「请上传报告压缩包、PDF版报告，切勿上传原文…仅支持zip、pdf后缀…30M」；全页仅两处人民币价格、无冲突档位。",
+   "sources": [
+    "https://www.paperpass.com/reduce-ai-repeat"
+   ],
+   "vote": "3-0"
+  },
+  {
+   "claim": "火龙果把续写/改写/翻译统一为编辑器内「行内触发+多候选+换一换/替换+应用」交互范式，而非聊天式陪写：续写(扩展)在希望续写的位置点击→行前出现加号按钮→右侧面板查看多个候选结果→点「应用」填入原文；开启生成模式后光标处显示生成按钮，每次续写给多个结果，可「换一换」更换、可「应用」复制进编辑区；改写分基础/学术/强力三模式（学术档面向论文场景），交互为右侧实时改写面板+绿色差异标识+点击改写后单句弹出替换原文按钮，并可导出PDF改写报告；改写、翻译同样每次给多结果供选择。",
+   "confidence": "high",
+   "evidence": "两份官方文档逐字：「在您希望续写的位置点击，行前即会出现『+』按钮…右侧查看多个扩展写作结果，点击应用即可将结果填入原文」「开启生成模式后，光标所在处会显示生成按钮…点击换一换，可以更换续写结果；点击应用，可以将AI续写内容复制到编辑区」「基础改写、学术改写和强力改写三种改写模式…改写的差异会以绿色标识出来…点击改写后的单句，会弹出替换原文的按钮…以PDF文档的形式输出保存」「每次的改写/翻译会给出多个结果供您选择」。caveat：help_pc 手册约2022-02成文，当前客户端 UI 可能已演化。",
+   "sources": [
+    "https://www.mypitaya.com/66cfd18d-c161-41da-907b-b50073ba22c7.html",
+    "https://mypitaya.com/html/help_pc.html"
+   ],
+   "vote": "3-0"
+  },
+  {
+   "claim": "火龙果官方明确把改写定位为降重功能——写作与降重在同一个编辑器功能内打通而非分立模块：手册「【改写】功能可用于降重、修辞调整、语言润色」；2026首页改写区块文案「通过同义改写降低原文的重复率」且立即体验CTA直链 web 编辑器(web.mypitaya.com/writing)；PC客户端仅智能写作/我的资料/发现/废纸篓四个模块，改写内嵌于智能写作，无独立降重模块（查重才是独立的编辑器外付费服务）。",
+   "confidence": "high",
+   "evidence": "help_pc.html 逐字：「【改写】功能可用于降重、修辞调整、语言润色，让内容更加通顺易懂」「文档改写：通顺流畅的同义句转换。每次的改写会给出多个结果供您选择」；产品结构：PC客户端4模块、改写在智能写作内；2026-08-16 实抓首页 meta keywords「论文,学术改写,改写,查重,降重,知网,维普,万方」+改写CTA直链编辑器。",
+   "sources": [
+    "https://mypitaya.com/html/help_pc.html",
+    "https://www.mypitaya.com/"
+   ],
+   "vote": "3-0"
+  },
+  {
+   "claim": "火龙果定价架构是「会员无限量+生成/查重按量」三轨解耦制：专业版会员对校对/改写/翻译无限使用（「没有使用的字数限制」），但不含查重；「灵感」(AI生成)与中文论文查重为会员之外的独立付费增值服务、无需先购买会员即可单独购买；灵感按生成字数计费 25元/万字、以字数包形式售卖（更大包赠字数、购包后可用全部模板）；查重与人工英文润色/翻译同为编辑器外增值服务（手册未标具体价格）。",
+   "confidence": "high",
+   "evidence": "会员权益页逐字：「您享有校对、改写、翻译功能的无限使用权益」「没有使用的字数限制」「在火龙果会员专业版之外…『灵感』功能和『查重』服务，需要单独付费购买。您可以单独购买这两项服务，而无需首先购买会员」；灵感页逐字：「按生成字数收费，每生成一万字25元人民币…无需先行购买火龙果写作会员…购买字数更多的包，将会额外赠送字数」；help_pc §5 增值服务=中文论文查重+人工文书服务，无价格数字。",
+   "sources": [
+    "https://www.mypitaya.com/66cfd18d-c161-41da-907b-b50073ba22c7.html",
+    "https://www.mypitaya.com/d50adddd-8e6f-4df2-8980-921c16ebe8d9.html",
+    "https://mypitaya.com/html/help_pc.html"
+   ],
+   "vote": "3-0"
+  },
+  {
+   "claim": "火龙果「灵感」是模板选择式AI生成（非聊天式）：入口两个（首页直点「灵感」/编辑器右下角「灵感」按钮），点击后选择所需生成模板使用；共12类模板——超级改写、超级翻译、长篇、短篇、风格润色、单句扩写、摘要、简历亮点提升、邮件、小红书标题、小红书正文、SEO文章——覆盖改写/扩写/润色/摘要/长文生成等论文写作核心动作，同时混入小红书/简历/SEO等泛内容模板；攻略页流程为一句话主题→补全大纲→点击「获得全文」。",
+   "confidence": "high",
+   "evidence": "灵感功能说明页逐字列出12模板与两入口句「『灵感』功能有两个入口…选择您所需要的生成模版进行使用」；两页关键词扫描 聊天/对话/chat/陪写=0 命中；攻略页(mypitaya.com/059908cc-...)为表单化流程(一句话主题描述→大纲→获得全文按钮)。",
+   "sources": [
+    "https://www.mypitaya.com/d50adddd-8e6f-4df2-8980-921c16ebe8d9.html",
+    "https://www.mypitaya.com/059908cc-6893-4751-82d7-ea11e846b4df.html"
+   ],
+   "vote": "3-0"
+  },
+  {
+   "claim": "跨平台共性（供 jiangzhong 对标）：①「题目→智能提纲→按提纲逐节生成」是提供写作模块平台（笔杆、PaperYY系）的主流程标配；②写作-查重-降重站内闭环是主要变现结构（笔杆同源API内嵌查降纠、火龙果改写即降重、PaperPass报告页内降AIGC按钮）；③已验证平台无一采用聊天式陪写，交互全部是编辑器行内多候选或模板选择式；④定价五式并存——积分制（笔杆）、按千字（PaperPass降重3元/降AIGC5元）、按篇分学历（PaperPass PPT 29-89元）、会员无限量（火龙果校对/改写/翻译）、按生成字数解耦（火龙果灵感25元/万字），另加机构免费配额（笔杆高校）。可差异化小众亮点：第三方检测报告驱动降重、多候选+换一换+绿色差异标识+PDF改写报告、答辩周边打包（答辩稿/演讲备注/答辩问答/答辩技巧）、摘要/致谢分类型推荐、版本历史+带标签笔记、图片OCR、素材/文献推荐一键采纳。",
+   "confidence": "high",
+   "evidence": "综合已验证的23条3-0 claim（笔杆 write.bigan.net 代码级、PaperPass 官网/ai-ppt/reduce-ai-repeat 页面级、火龙果三份官方文档）：每个共性点至少有来自两个平台的证据支撑，每个差异化亮点单项至少一处一手页面/代码证据。",
+   "sources": [
+    "https://write.bigan.net/",
+    "https://www.bigan.net/writing/",
+    "https://www.paperpass.com/",
+    "https://www.paperpass.com/ai-ppt",
+    "https://www.paperpass.com/reduce-ai-repeat",
+    "https://www.mypitaya.com/66cfd18d-c161-41da-907b-b50073ba22c7.html",
+    "https://www.mypitaya.com/d50adddd-8e6f-4df2-8980-921c16ebe8d9.html"
+   ],
+   "vote": "3-0 (synthesis of 23 unanimous claims)"
+  }
+ ],
+ "openQuestions": [
+  "万方、维普、格子达、大雅、秘塔写作猫、准达等其余平台的写作模块功能与定价如何？完全未覆盖——尤其秘塔写作猫以对话式产品起家，是「聊天式陪写是否存在于论文场景」的关键待验证对象。",
+  "笔杆网写作单次消耗的积分数值与积分充值汇率（元/积分）是多少？PaperYY 自有写作产品「小微智能ai论文写作」的完整功能矩阵与定价如何？",
+  "「检测报告驱动降重」兼容的第三方 AIGC/查重检测报告品牌清单与报告格式规范（zip 内文件结构、PDF 解析要求）是什么？这对 jiangzhong 复刻该差异点最关键。",
+  "多候选+换一换 vs 聊天式陪写的用户采纳率/完成率是否有公开数据或用户研究？现有验证只能证明头部平台都选了前者，不能证明后者无效。"
+ ],
+ "summary": "经三票对抗验证（全部为一手官网页面与产品前端代码证据），中文查重/降重平台的「AI写作」呈三种形态：笔杆网（与 PaperYY 同属武汉莱博）把写作做成独立全流程产品 write.bigan.net，核心流程「题目→智能提纲→按提纲创建论文」与 jiangzhong 现有三步实现同构，但辅助矩阵宽得多（摘要/致谢分类型推荐、翻译、模板库、OCR、素材/文献推荐一键采纳、版本管理等约13项，OnlyOffice 编辑器），且查重/降重/纠错以同源 API 原生内嵌写作台形成闭环，按积分计费并向高校机构发放每日免费配额。PaperPass 完全没有全文写作生成模块，其 AI 能力全部押在句子级改写降重（智能降重3元/千字、降AIGC 5元/千字溢价1.67倍、支持上传第三方检测报告驱动改写）和文档驱动的 AI 答辩 PPT（按篇分学历 29-89 元双档打包）上。火龙果以编辑器内「行内触发+多候选+换一换+应用」交互统一覆盖续写/改写/翻译，且官方明确定位改写即可降重（写作与降重同功能打通），定价上会员（校对/改写/翻译无限量）与灵感（12类模板、25元/万字字数包）、查重（单独付费）彻底解耦。跨平台共性：「题目→提纲→逐节生成」是标配主流程、写作-查重-降重站内闭环是主要变现结构、已验证平台无一采用聊天式陪写（交互全部是编辑器多候选或模板选择式）。对 jiangzhong 的落地建议：保留三步主流程，升级为编辑器内多候选/换一换交互与句子级改写入口（与降重引擎共用），补齐摘要/致谢/参考文献等轻量生成件，并差异化引入「检测报告驱动降重」、字数包/积分双轨定价与答辩周边打包。"
+}

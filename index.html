@@ -217,8 +217,21 @@
         <button id="write-humanize" type="button" class="primary mini">一键降AI（消耗 1 次）</button>
         <button id="write-dl-report" type="button" class="ghost mini">下载报告</button>
       </div>
+      <div class="write-part-bar">
+        <span class="write-part-label">配套生成：</span>
+        <button class="write-part-btn ghost mini" data-part="abstract" type="button">摘要</button>
+        <button class="write-part-btn ghost mini" data-part="keywords" type="button">关键词</button>
+        <button class="write-part-btn ghost mini" data-part="ack" type="button">致谢</button>
+        <button class="write-part-btn ghost mini" data-part="outline_open" type="button">开题思路</button>
+      </div>
+      <div id="write-part-result" hidden>
+        <div class="write-part-head"><span id="write-part-name"></span>
+          <button id="write-part-copy" type="button" class="ghost mini">复制</button>
+        </div>
+        <div id="write-part-text" class="text"></div>
+      </div>
       <div id="write-sections"></div>
-      <p class="note">⚠ AI 生成内容仅供写作参考，请自行核对事实、数据与观点后修改使用。</p>
+      <p class="note">⚠ AI 生成内容仅供写作参考，请自行核对事实、数据与观点后修改使用。<br>💡 点任意句子可改写该句（多候选，消耗 1 次）。</p>
     </div>
   </section>
 
@@ -266,6 +279,17 @@
 </main>
 
 <footer class="foot">降重 · <span id="mode-label">质量管线</span> · 文字改写参考工具</footer>
+
+<div id="sent-pop" class="sent-pop" hidden>
+  <div class="sent-pop-head">
+    <span>改写候选</span>
+    <span>
+      <button id="sent-pop-refresh" type="button" class="ghost mini">换一换</button>
+      <button id="sent-pop-close" type="button" class="ghost mini" aria-label="关闭">×</button>
+    </span>
+  </div>
+  <div id="sent-pop-list"></div>
+</div>
 
 <div id="pay-modal" class="pay-modal" hidden>
   <div class="pay-modal-card">
