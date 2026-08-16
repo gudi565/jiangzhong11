@@ -8,4 +8,5 @@ wechatpayv3
 qrcode
 pillow
 transformers
-torchpymupdf
+torch
+pymupdf
