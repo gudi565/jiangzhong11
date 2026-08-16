@@ -61,7 +61,8 @@ async def cid_middleware(request: Request, call_next):
                   "/api/plagiarism-check", "/api/rewrite-file", "/api/make-report",
                   "/api/report-parse", "/api/report-rewrite",
                   "/api/write-outline", "/api/write-generate",
-                  "/api/write-part", "/api/sentence-rewrite"}
+                  "/api/write-part", "/api/sentence-rewrite",
+                  "/api/write-outlines", "/api/write-versions"}
     if request.url.path in _EXPENSIVE and request.method == "POST":
         rl = _rate_check(request)
         if rl:
@@ -86,7 +87,7 @@ def _engine_err(e: Exception):
     """GLM/网络故障 → 502 + 干净中文；其它异常 → 500（traceback 落日志便于排障）。"""
     msg = str(e)
     if any(k in msg for k in ("网络", "超时", "GLM", "timed out", "HTTP 4", "HTTP 5", "空内容", "响应结构",
-                              "改写候选")):
+                              "改写候选", "大纲生成失败")):
         return JSONResponse({"error": "AI 服务暂时不可用，请稍后重试"}, status_code=502)
     traceback.print_exc()
     return JSONResponse({"error": f"{type(e).__name__}: {e}"}, status_code=500)
@@ -674,6 +675,18 @@ class SentenceRewriteReq(BaseModel):
     sentence: str = Field(...)
 
 
+class WriteRefsReq(BaseModel):
+    topic: str = Field(...)
+    n: int = 5
+
+
+class WriteVersionsSaveReq(BaseModel):
+    topic: str = Field(...)
+    label: str = ""
+    sections: list = Field(default_factory=list)
+    full_text: str = ""
+
+
 def _validate_write(req):
     topic = (req.topic or "").strip()
     if not (2 <= len(topic) <= 80):
@@ -851,6 +864,114 @@ def sentence_rewrite(req: SentenceRewriteReq, request: Request):
         return JSONResponse({"error": str(e)}, status_code=400)
     except Exception as e:
         return _engine_err(e)
+
+
+@app.post("/api/write-refs")
+def write_refs(req: WriteRefsReq, request: Request):
+    """参考文献骨架推荐（本地池，不调 GLM、不扣次）。激活即可用。"""
+    topic = (req.topic or "").strip()
+    if not (2 <= len(topic) <= 80):
+        return JSONResponse({"error": "题目需 2-80 个字"}, status_code=400)
+    active, _, _ = quota.is_active(request.state.cid)
+    if not active:
+        return JSONResponse(
+            {"error": "未激活或已到期，请输入兑换码（淘宝购买）。",
+             "quota": quota.get_state_summary(request.state.cid)},
+            status_code=402,
+        )
+    refs = engine.suggest_references(topic, req.n)
+    return {"ok": True, "refs": refs,
+            "note": "条目为推荐来源骨架，作者与卷期请按知网/万方实际检索结果补全后使用。"}
+
+
+@app.post("/api/write-outlines")
+def write_outlines(req: WriteOutlineReq, request: Request):
+    """多候选大纲：并发生成 3 版不同侧重，供轮播挑选。免费迭代（不 consume）。"""
+    if not engine.KEY:
+        return JSONResponse({"error": "未配置 ZHIPU_API_KEY"}, status_code=500)
+    err = _validate_write(req)
+    if err:
+        return JSONResponse({"error": err}, status_code=400)
+    active, _, _ = quota.is_active(request.state.cid)
+    if not active:
+        return JSONResponse(
+            {"error": "未激活或已到期，请输入兑换码（淘宝购买）。",
+             "quota": quota.get_state_summary(request.state.cid)},
+            status_code=402,
+        )
+    try:
+        variants = engine.generate_outline_variants(
+            req.topic.strip(), req.kind, req.words, req.discipline, req.notes)
+        out = [{"outline": _outline_text(v), "sections": len(v)} for v in variants]
+        return {"ok": True, "variants": out,
+                "note": "左右切换挑选一版，可在编辑框里继续修改后再生成全文。"}
+    except ValueError as e:
+        return JSONResponse({"error": str(e)}, status_code=400)
+    except Exception as e:
+        return _engine_err(e)
+
+
+def _outline_text(sections):
+    return "\n".join(s["title"] + ("：" + "；".join(s["points"]) if s["points"] else "")
+                     for s in sections)
+
+
+@app.get("/api/write-versions")
+def write_versions_list(request: Request):
+    active, _, _ = quota.is_active(request.state.cid)
+    if not active:
+        return JSONResponse(
+            {"error": "未激活或已到期，请输入兑换码（淘宝购买）。",
+             "quota": quota.get_state_summary(request.state.cid)},
+            status_code=402,
+        )
+    return {"items": history.list_summaries(request.state.cid, task="write_version")}
+
+
+@app.post("/api/write-versions")
+def write_versions_save(req: WriteVersionsSaveReq, request: Request):
+    """保存当前文章快照为版本（不 consume）。同一文章最多 10 版，超出丢最旧。"""
+    active, _, _ = quota.is_active(request.state.cid)
+    if not active:
+        return JSONResponse(
+            {"error": "未激活或已到期，请输入兑换码（淘宝购买）。",
+             "quota": quota.get_state_summary(request.state.cid)},
+            status_code=402,
+        )
+    topic = (req.topic or "").strip()
+    if not (2 <= len(topic) <= 80):
+        return JSONResponse({"error": "题目需 2-80 个字"}, status_code=400)
+    if len(req.full_text or "") > 20000:
+        return JSONResponse({"error": "全文超长"}, status_code=413)
+    # sections 结构校验（防绕过 60KB 瘦身上限的巨型 payload）
+    secs = req.sections if isinstance(req.sections, list) else []
+    if len(secs) > 15:
+        return JSONResponse({"error": "段节数超限"}, status_code=400)
+    clean_secs = []
+    for s in secs:
+        if not isinstance(s, dict):
+            continue
+        clean_secs.append({
+            "title": str(s.get("title", ""))[:60],
+            "text": str(s.get("text", ""))[:20000],
+            "words": int(s.get("words") or 0),
+        })
+    if sum(len(s["text"]) for s in clean_secs) > 24000:
+        return JSONResponse({"error": "全文超长"}, status_code=413)
+    result = {"task": "write_version", "topic": topic,
+              "label": (req.label or "").strip()[:30] or "快照",
+              "sections": clean_secs, "full_text": req.full_text or "",
+              "note": "文章版本快照"}
+    with history._lock:
+        state = history._load()
+        mine = sorted((r for r in state["records"].values()
+                       if r.get("cid") == request.state.cid and r.get("task") == "write_version"),
+                      key=lambda r: r.get("ts", 0))
+        for old in mine[:-10]:
+            state["records"].pop(old.get("id"), None)
+        history._save(state)
+    hid = history.add(request.state.cid, "write_version", topic, result, max_per_cid=10)
+    return {"ok": True, "id": hid}
 
 
 @app.get("/api/history")

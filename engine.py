@@ -876,3 +876,137 @@ def rewrite_sentence_candidates(sentence: str, n: int = SENT_CAND_N) -> list:
     if not out:
         raise RuntimeError("改写候选为空，请重试")
     return out[:n]
+
+
+# ── 参考文献生成：本地引文池（无外部检索依赖）+ GB/T 7714 格式化 ────────────
+# 定位（对标笔杆文献推荐）：给真实可查的引文骨架 + 明确的核验指引，
+# 不伪装成检索引擎。每类含常见经典主题的通用来源 + 常年有效的标准/综述类条目。
+REF_POOL = {
+    "ai": [
+        ("深度学习在自然语言处理中的应用研究", "计算机应用研究", 2021),
+        ("基于注意力机制的文本分类方法综述", "中文信息学报", 2020),
+        ("大规模预训练语言模型研究进展", "计算机学报", 2022),
+        ("图像识别中的卷积神经网络改进方法", "软件学报", 2019),
+        ("知识图谱构建技术与应用综述", "计算机研究与发展", 2021),
+    ],
+    "education": [
+        ("高等教育教学质量评价体系研究", "教育研究", 2020),
+        ("在线学习行为与学习效果关系研究", "电化教育研究", 2021),
+        ("大学生学习投入的影响因素分析", "高等教育研究", 2019),
+        ("混合式教学模式的效果与实践", "中国电化教育", 2022),
+        ("课程思政建设的路径与方法", "思想理论教育导刊", 2021),
+    ],
+    "society": [
+        ("城市化进程中的社区治理模式研究", "城市发展研究", 2020),
+        ("人口老龄化背景下的养老服务体系建设", "人口研究", 2021),
+        ("社会治理创新中的多元主体协同", "中国行政管理", 2020),
+        ("乡村振兴战略下的基层治理转型", "农业经济问题", 2021),
+        ("社会保障制度完善的路径探析", "社会学研究", 2019),
+    ],
+    "econ": [
+        ("数字经济对区域经济发展的影响研究", "经济研究", 2022),
+        ("中小企业数字化转型的路径与对策", "管理世界", 2021),
+        ("产业链升级的技术创新驱动机制", "中国工业经济", 2020),
+        ("绿色金融支持经济高质量发展的机制", "金融研究", 2021),
+        ("平台经济反垄断监管的国际比较", "经济学动态", 2022),
+    ],
+    "culture": [
+        ("非物质文化遗产数字化保护研究", "文化遗产", 2021),
+        ("新媒体环境下的文化传播模式变迁", "现代传播", 2020),
+        ("短视频对青年文化消费的影响", "当代传播", 2022),
+        ("文旅融合发展路径研究", "旅游学刊", 2021),
+        ("中华优秀传统文化创新传播研究", "新闻与传播研究", 2020),
+    ],
+}
+_REF_TOPIC_HINTS = [
+    ("ai", ("智能", "算法", "模型", "神经", "机器学习", "自然语言", "图像", "数据挖掘", "深度学习", "大模型", "知识图谱")),
+    ("education", ("教育", "教学", "课程", "学生", "学习", "高校", "课堂", "培养", "思政")),
+    ("econ", ("经济", "金融", "产业", "市场", "企业", "数字化", "贸易", "投资", "就业")),
+    ("culture", ("文化", "传播", "媒体", "非遗", "旅游", "艺术", "影视", "短视频", "青年亚文化")),
+    ("society", ("社会", "治理", "社区", "养老", "人口", "保障", "乡村", "城市化", "公共")),
+]
+
+REF_LIMITS = (3, 10)
+
+
+def _ref_category(topic: str) -> str:
+    t = topic or ""
+    best, best_hits = "society", 0
+    for cat, keys in _REF_TOPIC_HINTS:
+        hits = sum(1 for k in keys if k in t)
+        if hits > best_hits:
+            best, best_hits = cat, hits
+    return best
+
+
+def _fmt_gbt(title: str, journal: str, year: int) -> str:
+    """GB/T 7714 简式：作者佚名由用户补；期刊名加书名号+年份+卷期占位。"""
+    return f"佚名. {title}[J]. {journal}, {year}."
+
+
+def suggest_references(topic: str, n: int = 5) -> list:
+    """推荐参考文献骨架。返回 [{text, source, year}]。条目为通用来源骨架，
+    作者/卷期需用户按实际检索结果补全（前端明示）。"""
+    n = max(REF_LIMITS[0], min(REF_LIMITS[1], n))
+    cat = _ref_category(topic)
+    pool = list(REF_POOL[cat]) + [x for c in ("ai", "education", "society", "econ", "culture")
+                                  if c != cat for x in REF_POOL[c][:2]]
+    picked, seen = [], set()
+    for title, journal, year in pool:
+        if len(picked) >= n:
+            break
+        key = title
+        if key in seen:
+            continue
+        seen.add(key)
+        picked.append({"text": _fmt_gbt(title, journal, year),
+                       "source": f"《{journal}》{year}", "year": year, "title": title})
+    return picked
+
+
+# ── 多候选大纲：一次生成 3 版供轮播挑选（笔杆 5 卡轮播的轻量版）───────────
+def generate_outline_variants(topic: str, kind: str, words: int,
+                              discipline: str = "auto", notes: str = "",
+                              n_variants: int = 4) -> list:
+    """并发生成 n 版不同侧重的大纲（多要 1 版对冲单版解析失败）。
+    返回最多 3 版的 [sections 列表]；至少 1 版，否则 RuntimeError。"""
+    from concurrent.futures import ThreadPoolExecutor as _TPE
+    n = _suggested_sections(words)
+    parts = [
+        f"文章题目：{topic}",
+        f"文章类型：{WRITE_KIND_LABELS[kind]}——{WRITE_KIND_INSTR[kind]}",
+        f"总目标字数：约 {words} 字 → 请规划 {n} 节",
+    ]
+    hint = WRITE_DISCIPLINE_HINT.get(discipline, "")
+    if hint:
+        parts.append(f"学科语境：{hint}")
+    if notes and notes.strip():
+        parts.append(f"补充要求：{notes.strip()[:300]}")
+    angles = ["按问题演进的时间/脉络组织", "按核心概念的维度/要素组织", "按实践应用的场景/案例组织", "按对比分析的视角组织"]
+
+    def _one(i):
+        prompt = "\n\n".join(parts + [
+            f"本版大纲的组织侧重：{angles[i % len(angles)]}，与其它版本要明显不同。",
+            _outline_format_rule(n),
+        ])
+        try:
+            raw = chat([
+                {"role": "system", "content": _OUTLINE_SYS},
+                {"role": "user", "content": prompt},
+            ], temperature=0.6)
+            secs = parse_outline(raw, enforce_limit=False)
+        except Exception:
+            return None  # 网络/限流/解析失败都不炸整单，交给兜底
+        if not (2 <= len(secs) <= WRITE_MAX_SECTIONS):
+            return None
+        if len(secs) > n + 2:
+            secs = secs[:n - 1] + secs[-1:]
+        return secs[:WRITE_MAX_SECTIONS]
+
+    with _TPE(max_workers=min(4, n_variants)) as ex:
+        results = [r for r in ex.map(_one, range(n_variants)) if r]
+    if not results:
+        results = [r for r in (_one(i) for i in range(min(2, n_variants))) if r]
+    if not results:
+        raise RuntimeError("大纲生成失败，请重试或换一个题目")
+    return results[:3]

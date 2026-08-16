@@ -428,15 +428,46 @@ function writeFormPayload() {
   };
 }
 
+// ── 多候选大纲轮播 ────────────────────────────────────────────────────────
+let outlineVariants = [];
+let outlineIdx = 0;
+
+function renderOutlineCarousel() {
+  const box = document.getElementById("outline-carousel");
+  if (outlineVariants.length < 2) { box.hidden = true; return; }
+  box.hidden = false;
+  document.getElementById("outline-count").textContent = `大纲 ${outlineIdx + 1}/${outlineVariants.length}（左右切换）`;
+  document.getElementById("outline-preview").textContent = outlineVariants[outlineIdx].outline
+    .split("\n").map((l, i) => `${i + 1}. ${l}`).join("\n");
+}
+document.getElementById("outline-prev").addEventListener("click", () => {
+  if (!outlineVariants.length) return;
+  outlineIdx = (outlineIdx - 1 + outlineVariants.length) % outlineVariants.length;
+  renderOutlineCarousel();
+});
+document.getElementById("outline-next").addEventListener("click", () => {
+  if (!outlineVariants.length) return;
+  outlineIdx = (outlineIdx + 1) % outlineVariants.length;
+  renderOutlineCarousel();
+});
+document.getElementById("outline-use").addEventListener("click", () => {
+  if (!outlineVariants.length) return;
+  document.getElementById("write-outline").value = outlineVariants[outlineIdx].outline;
+  // 按这版节数刷新生成按钮文案（与预览一致）
+  const secs = outlineVariants[outlineIdx].sections;
+  const mins = Math.max(1, Math.ceil(secs * 8 / 3 / 10));
+  $("write-go").textContent = `生成全文（${secs} 节，预计 ${mins} 分钟）`;
+});
+
 $("write-outline-btn").addEventListener("click", async () => {
   const p = writeFormPayload();
   if (!p.topic) { showError("请先填写题目"); $("write-topic").focus(); return; }
   $("err").hidden = true;
   const btn = $("write-outline-btn");
-  btn.disabled = true; btn.textContent = "大纲生成中…";
+  btn.disabled = true; btn.textContent = "生成中…（3 版大纲并行）";
   busy = true; document.querySelector('.tabs').classList.add('locked');
   try {
-    const r = await fetch("/api/write-outline", {
+    const r = await fetch("/api/write-outlines", {
       method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(p),
     });
     const d = await r.json();
@@ -445,10 +476,16 @@ $("write-outline-btn").addEventListener("click", async () => {
       else showError(d.error || ("HTTP " + r.status));
       return;
     }
-    $("write-outline").value = d.outline;
-    const mins = Math.max(1, Math.ceil(d.sections * 8 / 3 / 10));
-    $("write-go").textContent = `生成全文（${d.sections} 节，预计 ${mins} 分钟）`;
-    $("write-outline-wrap").hidden = false;
+    outlineVariants = d.variants || [];
+    outlineIdx = 0;
+    if (outlineVariants.length) {
+      $("write-outline").value = outlineVariants[0].outline;
+      const secs = outlineVariants[0].sections;
+      const mins = Math.max(1, Math.ceil(secs * 8 / 3 / 10));
+      $("write-go").textContent = `生成全文（${secs} 节，预计 ${mins} 分钟）`;
+    }
+    renderOutlineCarousel();
+    $("write-outline-wrap").hidden = !outlineVariants.length;
   } catch (e) {
     showError(e.message || String(e));
   } finally {
@@ -492,34 +529,16 @@ function showWriteResult(data) {
   writeResult = data;
   currentOutput = data.full_text || "";
   lastReport = { task: "write", orig_text: data.topic || "", result: data };
-  $("write-stats").innerHTML =
-    `<span class="pill">类型：${WRITE_KIND_ZH[data.kind] || data.kind}</span>` +
-    `<span class="pill">目标 <b>${data.target_words}</b> 字</span>` +
-    `<span class="pill">实际 <b>${data.actual_words}</b> 字</span>` +
-    `<span class="pill">${data.sections_count} 节</span>`;
   $("write-title").textContent = data.topic || "";
-  const wrap = $("write-sections");
-  wrap.innerHTML = "";
-  (data.sections || []).forEach((s, i) => {
-    const box = document.createElement("div"); box.className = "write-section";
-    const h = document.createElement("h4"); h.textContent = `${i + 1}、${s.title}`;
-    const body = document.createElement("div"); body.className = "text";
-    (s.text || "").split(/\n\s*\n/).forEach(p => {
-      if (!p.trim()) return;
-      const el = document.createElement("p");
-      // 逐句 span：行内改写入口
-      splitSentences(p.trim()).forEach(sent => {
-        const sp = document.createElement("span");
-        sp.className = "sent-click";
-        sp.textContent = sent;
-        sp.dataset.orig = sent;  // 应用改写后按此替换数据层，链式追踪
-        el.appendChild(sp);
-      });
-      body.appendChild(el);
-    });
-    box.append(h, body);
-    wrap.appendChild(box);
-  });
+  _rerenderWriteSections();
+  $("write-refs").hidden = true;
+  $("write-refs-list").innerHTML = "";
+  writeRefs = [];
+  $("write-part-result").hidden = true;   // 清上一篇文章的摘要/关键词残留
+  $("write-part-text").textContent = "";
+  $("write-versions").hidden = false;
+  $("write-ver-list").hidden = true;
+  $("write-ver-toggle").textContent = "展开";
   $("write-result").hidden = false;
   $("result").hidden = true;
   $("check-result").hidden = true;
@@ -560,6 +579,174 @@ $("write-part-copy").addEventListener("click", async () => {
   try { await navigator.clipboard.writeText($("write-part-text").textContent); flash($("write-part-copy"), "已复制"); }
   catch { flash($("write-part-copy"), "复制失败"); }
 });
+
+// ── 参考文献：推荐 → 勾选 → 插入 [n] ───────────────────────────────────────
+let writeRefs = [];
+
+$("write-refs-btn").addEventListener("click", async () => {
+  if (!writeResult || busy) return;
+  $("err").hidden = true;
+  const btn = $("write-refs-btn");
+  const old = btn.textContent;
+  btn.disabled = true; btn.textContent = "推荐中…";
+  try {
+    const r = await fetch("/api/write-refs", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ topic: writeResult.topic, n: 5 }),
+    });
+    const d = await r.json();
+    if (!r.ok) {
+      if (r.status === 402) handleQuotaError(d);
+      else showError(d.error || ("HTTP " + r.status));
+      return;
+    }
+    writeRefs = d.refs || [];
+    $("write-refs-list").innerHTML = writeRefs.map((rf, i) => `
+      <label class="match write-ref-item">
+        <input type="checkbox" checked data-i="${i}" />
+        <span class="write-ref-text">[${i + 1}] ${rf.text}</span>
+        <span class="pill">${rf.source}</span>
+      </label>`).join("");
+    $("write-refs").hidden = false;
+  } catch (e) {
+    showError(e.message || String(e));
+  } finally {
+    btn.disabled = false; btn.textContent = old;
+  }
+});
+
+function _selectedRefs() {
+  return [...document.querySelectorAll("#write-refs-list input:checked")]
+    .map(cb => +cb.dataset.i)
+    .filter(i => writeRefs[i])
+    .map(i => writeRefs[i]);
+}
+
+$("write-refs-copy").addEventListener("click", async () => {
+  const sel = _selectedRefs();
+  if (!sel.length) { flash($("write-refs-copy"), "先勾选"); return; }
+  const text = sel.map((rf, i) => `[${i + 1}] ${rf.text}`).join("\n");
+  try { await navigator.clipboard.writeText(text); flash($("write-refs-copy"), "已复制"); }
+  catch { flash($("write-refs-copy"), "复制失败"); }
+});
+
+$("write-refs-insert").addEventListener("click", () => {
+  const sel = _selectedRefs();
+  if (!writeResult || !sel.length) { showError("先勾选要插入的文献"); return; }
+  const refBlock = "\n\n参考文献\n\n" + sel.map((rf, i) => `[${i + 1}] ${rf.text}`).join("\n");
+  const last = writeResult.sections[writeResult.sections.length - 1];
+  if (last) {
+    last.text = (last.text || "") + refBlock;
+    last.words = last.text.replace(/\s/g, "").length;
+  } else {
+    writeResult.sections.push({ title: "参考文献", text: refBlock.trim(), words: 0 });
+  }
+  writeResult.full_text = writeResult.sections.map(s => s.text).join("\n\n");
+  writeResult.actual_words = writeResult.full_text.replace(/\s/g, "").length;
+  currentOutput = writeResult.full_text;
+  _rerenderWriteSections();
+  flash($("write-refs-insert"), "已插入");
+});
+
+function _rerenderWriteSections() {
+  const wrap = $("write-sections");
+  wrap.innerHTML = "";
+  (writeResult.sections || []).forEach((s, i) => {
+    const box = document.createElement("div"); box.className = "write-section";
+    const h = document.createElement("h4"); h.textContent = `${i + 1}、${s.title}`;
+    const body = document.createElement("div"); body.className = "text";
+    (s.text || "").split(/\n\s*\n/).forEach(p => {
+      if (!p.trim()) return;
+      const el = document.createElement("p");
+      splitSentences(p.trim()).forEach(sent => {
+        const sp = document.createElement("span");
+        sp.className = "sent-click";
+        sp.textContent = sent;
+        sp.dataset.orig = sent;
+        el.appendChild(sp);
+      });
+      body.appendChild(el);
+    });
+    box.append(h, body);
+    wrap.appendChild(box);
+  });
+  $("write-stats").innerHTML =
+    `<span class="pill">类型：${WRITE_KIND_ZH[writeResult.kind] || writeResult.kind}</span>` +
+    `<span class="pill">目标 <b>${writeResult.target_words}</b> 字</span>` +
+    `<span class="pill">实际 <b>${writeResult.actual_words}</b> 字</span>` +
+    `<span class="pill">${writeResult.sections_count} 节</span>`;
+  lastReport = { task: "write", orig_text: writeResult.topic, result: writeResult };
+}
+
+function esc(s) {
+  return String(s ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+}
+
+// ── 版本历史：存快照 → 列表 → 恢复 ────────────────────────────────────────
+$("write-ver-save").addEventListener("click", async () => {
+  if (!writeResult) { showError("还没有可保存的文章"); return; }
+  try {
+    const label = ($("write-ver-label-input")?.value || "").trim();
+    const r = await fetch("/api/write-versions", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ topic: writeResult.topic, label, sections: writeResult.sections, full_text: writeResult.full_text }),
+    });
+    const d = await r.json();
+    if (!r.ok) { showError(d.error || "保存失败"); return; }
+    if ($("write-ver-label-input")) $("write-ver-label-input").value = "";
+    flash($("write-ver-save"), "已保存");
+    loadWriteVersions(true);
+  } catch (e) { showError(e.message || String(e)); }
+});
+
+$("write-ver-toggle").addEventListener("click", () => {
+  const list = $("write-ver-list");
+  list.hidden = !list.hidden;
+  $("write-ver-toggle").textContent = list.hidden ? "展开" : "收起";
+  if (!list.hidden) loadWriteVersions();
+});
+
+async function loadWriteVersions(force) {
+  const list = $("write-ver-list");
+  if (list.hidden && !force) return;
+  list.innerHTML = '<div class="history-empty">加载中…</div>';
+  try {
+    const r = await fetch("/api/write-versions");
+    const d = await r.json();
+    if (!r.ok) { list.innerHTML = '<div class="history-empty">加载失败</div>'; return; }
+    if (!(d.items || []).length) { list.innerHTML = '<div class="history-empty">还没有版本，点「存为版本」保存当前文章</div>'; return; }
+    list.innerHTML = d.items.map(it => `
+      <div class="write-ver-item">
+        <span class="write-ver-label">${esc(it.label ? `${it.label} · ` : "")}${esc(it.title.slice(0, 14))} · ${it.chars || 0} 字</span>
+        <span class="write-ver-time">${new Date(it.ts * 1000).toLocaleString("zh-CN", { hour12: false })}</span>
+        <button type="button" class="ghost mini" onclick="restoreWriteVersion('${it.id}')">恢复</button>
+      </div>`).join("");
+  } catch (e) {
+    list.innerHTML = '<div class="history-empty">加载失败</div>';
+  }
+}
+
+async function restoreWriteVersion(id) {
+  try {
+    const r = await fetch(`/api/history/${id}`);
+    const rec = await r.json();
+    if (!r.ok) { showError(rec.error || "版本不存在"); return; }
+    const res = rec.result || {};
+    if (!res.full_text) { showError("版本数据不完整"); return; }
+    writeResult = {
+      task: "write", topic: rec.orig_text || rec.title || "", kind: res.kind || "general",
+      kind_label: res.kind_label || "通用文章", discipline: res.discipline || "auto",
+      target_words: res.target_words || (res.full_text.replace(/\s/g, "").length),
+      actual_words: res.full_text.replace(/\s/g, "").length,
+      sections_count: (res.sections || []).length,
+      sections: res.sections || [{ title: "正文", text: res.full_text, words: res.full_text.length }],
+      full_text: res.full_text, note: res.note || "",
+    };
+    showWriteResult(writeResult);
+    $("write-topic").value = writeResult.topic;
+    flash($("write-ver-toggle"), "已恢复");
+  } catch (e) { showError(e.message || String(e)); }
+}
 
 // ── 句级改写 popover：点句子 → 多候选 → 换一换/应用 ────────────────────────
 const sentPop = { el: null, span: null, loading: false };

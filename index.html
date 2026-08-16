@@ -205,6 +205,15 @@
         <span>大纲（可自由编辑，每行一节：<b>标题：要点1；要点2</b>）</span>
         <button id="write-go" type="button" class="primary">生成全文</button>
       </div>
+      <div id="outline-carousel" class="outline-carousel" hidden>
+        <button id="outline-prev" type="button" class="ghost mini" aria-label="上一版">‹</button>
+        <div class="outline-carousel-body">
+          <div class="outline-carousel-count" id="outline-count"></div>
+          <div class="outline-carousel-text" id="outline-preview"></div>
+        </div>
+        <button id="outline-next" type="button" class="ghost mini" aria-label="下一版">›</button>
+        <button id="outline-use" type="button" class="primary mini">用这版</button>
+      </div>
       <textarea id="write-outline" rows="8" spellcheck="false"></textarea>
       <p class="note">生成全文按次计费（时长套餐不限次）；生成期间请勿关闭页面。</p>
     </div>
@@ -223,6 +232,26 @@
         <button class="write-part-btn ghost mini" data-part="keywords" type="button">关键词</button>
         <button class="write-part-btn ghost mini" data-part="ack" type="button">致谢</button>
         <button class="write-part-btn ghost mini" data-part="outline_open" type="button">开题思路</button>
+        <button id="write-refs-btn" class="ghost mini" type="button">参考文献</button>
+      </div>
+      <div id="write-refs" hidden>
+        <div class="write-part-head"><span>参考文献（推荐骨架，作者/卷期请自行检索补全）</span>
+          <button id="write-refs-copy" type="button" class="ghost mini">复制所选</button>
+        </div>
+        <div id="write-refs-list" class="matches"></div>
+        <div class="actions" style="margin-top:10px">
+          <button id="write-refs-insert" type="button" class="primary mini">插入 [n] 到全文末尾</button>
+        </div>
+      </div>
+      <div id="write-versions" class="write-versions" hidden>
+        <div class="write-part-head"><span>版本历史</span>
+          <span class="write-ver-actions">
+            <input id="write-ver-label-input" type="text" placeholder="版本备注（可空）" maxlength="30" />
+            <button id="write-ver-save" type="button" class="ghost mini">存为版本</button>
+            <button id="write-ver-toggle" type="button" class="ghost mini">展开</button>
+          </span>
+        </div>
+        <div id="write-ver-list" class="write-ver-list" hidden></div>
       </div>
       <div id="write-part-result" hidden>
         <div class="write-part-head"><span id="write-part-name"></span>

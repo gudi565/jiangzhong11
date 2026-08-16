@@ -21,6 +21,8 @@ TRUNCATE_CHARS = 20000
 
 # 超限时依次删除的 result 派生字段（按可牺牲程度排序）
 SLIM_FIELDS = ("sentence_scores", "matches", "diagnostics", "signals", "stages")
+# 不计入每 cid 通用记录上限的内部 task（write_version 快照有独立的 10 版上限）
+EXEMPT_TASKS = ("write_version",)
 
 
 def _load() -> dict:
@@ -59,7 +61,7 @@ def _slim(record: dict) -> dict:
     return record
 
 
-def add(cid: str, task: str, orig_text: str, result: dict) -> str:
+def add(cid: str, task: str, orig_text: str, result: dict, max_per_cid: int = None) -> str:
     hid = secrets.token_hex(6)
     title = (orig_text or "").strip().replace("\n", " ")[:20] or task
     record = {
@@ -71,30 +73,41 @@ def add(cid: str, task: str, orig_text: str, result: dict) -> str:
         "orig_text": orig_text or "",
         "result": result or {},
     }
+    limit = max_per_cid if max_per_cid is not None else MAX_PER_CID
     with _lock:
         state = _load()
+        # write_version 等内部快照不计入通用记录上限（否则免费快照会挤掉付费任务历史）
+        counting = [r for r in state["records"].values()
+                    if r.get("cid") == cid and r.get("task") not in EXEMPT_TASKS]
+        if task not in EXEMPT_TASKS and len(counting) >= limit:
+            oldest = min(counting, key=lambda r: r.get("ts", 0))
+            state["records"].pop(oldest.get("id"), None)
         state["records"][hid] = _slim(record)
-        mine = sorted(
-            (r for r in state["records"].values() if r.get("cid") == cid),
-            key=lambda r: r.get("ts", 0),
-        )
-        for old in mine[:-MAX_PER_CID]:
-            state["records"].pop(old.get("id"), None)
         _save(state)
     return hid
 
 
-def list_summaries(cid: str) -> list:
+def list_summaries(cid: str, task: str = None) -> list:
     with _lock:
         state = _load()
-    items = [
-        {
-            "id": r["id"], "task": r.get("task", ""), "title": r.get("title", ""),
-            "ts": r.get("ts", 0),
-            "chars": len(r.get("orig_text", "")) or len(r.get("result", {}).get("rewrite", "") or ""),
-        }
-        for r in state["records"].values() if r.get("cid") == cid
-    ]
+    items = []
+    for r in state["records"].values():
+        if r.get("cid") != cid:
+            continue
+        if task is not None and r.get("task") != task:
+            continue
+        if task is None and r.get("task") in EXEMPT_TASKS:
+            continue  # 内部快照不进通用历史列表
+        chars = len(r.get("orig_text", ""))
+        if r.get("task") in EXEMPT_TASKS and isinstance(r.get("result", {}).get("full_text"), str):
+            chars = len(r["result"]["full_text"])  # 快照字数=全文长度，而非题目
+        elif not chars:
+            rw = r.get("result", {}).get("rewrite", "")
+            chars = len(rw) if isinstance(rw, str) else 0
+        label = r.get("result", {}).get("label")
+        items.append({"id": r["id"], "task": r.get("task", ""), "title": r.get("title", ""),
+                      "ts": r.get("ts", 0), "chars": chars,
+                      **({"label": label} if label else {})})
     items.sort(key=lambda x: x["ts"], reverse=True)
     return items
 
