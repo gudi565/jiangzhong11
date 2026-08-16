@@ -1010,3 +1010,56 @@ def generate_outline_variants(topic: str, kind: str, words: int,
     if not results:
         raise RuntimeError("大纲生成失败，请重试或换一个题目")
     return results[:3]
+
+
+# ── 文献搜索：DuckDuckGo 检真实网页题录（与查重引擎同款容错）───────────────
+def search_references(topic: str, query: str, n: int = 6) -> list:
+    """按用户输入的检索词搜真实文献线索。返回 [{title, source, url}]，失败抛 RuntimeError。
+    结果是网页题录，格式化为 GB/T 由前端/用户完成——保留用户核对原文的主动权。"""
+    q = (query or topic or "").strip()
+    if not (2 <= len(q) <= 60):
+        raise ValueError("检索词需 2-60 个字")
+    n = max(3, min(10, n))
+    try:
+        from duckduckgo_search import DDGS
+    except Exception:
+        raise RuntimeError("服务器未装搜索依赖，请用「手动添加」或推荐列表")
+
+    def _ddg_once():
+        return list(DDGS().text(q + " 期刊 论文", max_results=n * 2, region="cn-zh"))
+
+    from concurrent.futures import ThreadPoolExecutor as _TPE
+    results = []
+    last_err = None
+    for _ in range(2):
+        with _TPE(max_workers=1) as ex:
+            try:
+                # 硬超时：DDG 偶发挂死（连接池饿死）不能拖住整个请求
+                results = ex.submit(_ddg_once).result(timeout=25)
+                break
+            except Exception as e:
+                last_err = e
+                results = []
+    if not results:
+        raise RuntimeError("搜索暂时不可用（超时），请稍后重试或手动添加")
+
+    out, seen = [], set()
+    for r in results:
+        title = (r.get("title", "") or "").strip()
+        url = r.get("href") or r.get("url") or ""
+        body = (r.get("body", "") or r.get("snippet", "") or "").strip()
+        if not title or len(title) < 8 or title in seen:
+            continue
+        seen.add(title)
+        # 来源站点名（简陋但够用的展示线索）
+        src = ""
+        m = re.match(r"https?://(?:www\.)?([^/]+)", url)
+        if m:
+            src = m.group(1)
+        out.append({"title": title[:80], "source": src, "url": url,
+                    "snippet": body[:100]})
+        if len(out) >= n:
+            break
+    if not out:
+        raise RuntimeError("没搜到相关文献线索，换个检索词试试")
+    return out

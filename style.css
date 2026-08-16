@@ -498,3 +498,15 @@ textarea#write-outline:focus { border-color: var(--accent); box-shadow: 0 0 0 3p
   background: rgba(10,33,24,.55); border: 1px solid var(--glass-border, rgba(255,255,255,.12));
   border-radius: 8px; outline: none; color: var(--ink, var(--text)); }
 .write-ver-actions input:focus { border-color: var(--accent); }
+
+/* ── 文献三来源面板 ──────────────────────────────────────────── */
+.write-refs-search { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 10px; }
+.write-refs-search input { flex: 1; min-width: 200px; font-size: 13px; padding: 8px 12px;
+  background: rgba(10,33,24,.55); border: 1px solid var(--glass-border, rgba(255,255,255,.12));
+  border-radius: 8px; outline: none; color: var(--ink, var(--text)); }
+.write-refs-search input:focus { border-color: var(--accent); }
+.write-refs-manual { display: flex; gap: 8px; margin-bottom: 10px; }
+.write-refs-manual input { flex: 1; font-size: 13px; padding: 8px 12px;
+  background: rgba(10,33,24,.55); border: 1px solid var(--glass-border, rgba(255,255,255,.12));
+  border-radius: 8px; outline: none; color: var(--ink, var(--text)); }
+.write-ref-link { font-size: 12px; color: var(--accent); white-space: nowrap; }

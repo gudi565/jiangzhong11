@@ -62,7 +62,8 @@ async def cid_middleware(request: Request, call_next):
                   "/api/report-parse", "/api/report-rewrite",
                   "/api/write-outline", "/api/write-generate",
                   "/api/write-part", "/api/sentence-rewrite",
-                  "/api/write-outlines", "/api/write-versions"}
+                  "/api/write-outlines", "/api/write-versions",
+                  "/api/write-refs-search"}
     if request.url.path in _EXPENSIVE and request.method == "POST":
         rl = _rate_check(request)
         if rl:
@@ -680,6 +681,12 @@ class WriteRefsReq(BaseModel):
     n: int = 5
 
 
+class WriteRefSearchReq(BaseModel):
+    topic: str = Field(...)
+    query: str = Field(...)
+    n: int = 6
+
+
 class WriteVersionsSaveReq(BaseModel):
     topic: str = Field(...)
     label: str = ""
@@ -914,6 +921,29 @@ def write_outlines(req: WriteOutlineReq, request: Request):
 def _outline_text(sections):
     return "\n".join(s["title"] + ("：" + "；".join(s["points"]) if s["points"] else "")
                      for s in sections)
+
+
+@app.post("/api/write-refs-search")
+def write_refs_search(req: WriteRefSearchReq, request: Request):
+    """文献搜索：DuckDuckGo 检真实网页题录，供用户自主挑选。免费（不扣次）。"""
+    topic = (req.topic or "").strip()
+    if not (2 <= len(topic) <= 80):
+        return JSONResponse({"error": "题目需 2-80 个字"}, status_code=400)
+    active, _, _ = quota.is_active(request.state.cid)
+    if not active:
+        return JSONResponse(
+            {"error": "未激活或已到期，请输入兑换码（淘宝购买）。",
+             "quota": quota.get_state_summary(request.state.cid)},
+            status_code=402,
+        )
+    try:
+        items = engine.search_references(topic, req.query, req.n)
+        return {"ok": True, "items": items,
+                "note": "搜索结果为公开网页题录，点标题可打开原文核对后再选用。"}
+    except ValueError as e:
+        return JSONResponse({"error": str(e)}, status_code=400)
+    except RuntimeError as e:
+        return JSONResponse({"error": str(e)}, status_code=502)
 
 
 @app.get("/api/write-versions")

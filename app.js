@@ -580,8 +580,29 @@ $("write-part-copy").addEventListener("click", async () => {
   catch { flash($("write-part-copy"), "复制失败"); }
 });
 
-// ── 参考文献：推荐 → 勾选 → 插入 [n] ───────────────────────────────────────
-let writeRefs = [];
+// ── 参考文献：推荐 + 搜索 + 手动 → 统一勾选 → 插入 [n] ────────────────────
+let writeRefs = [];  // [{text, source, url, checked}]
+
+function _renderRefsList() {
+  $("write-refs-list").innerHTML = writeRefs.map((rf, i) => {
+    const link = rf.url
+      ? `<a href="${esc(rf.url)}" target="_blank" rel="noopener" class="write-ref-link">原文↗</a>`
+      : "";
+    return `
+      <label class="match write-ref-item">
+        <input type="checkbox" ${rf.checked ? "checked" : ""} data-i="${i}" />
+        <span class="write-ref-text">[${i + 1}] ${esc(rf.text)}</span>
+        <span class="pill">${esc(rf.source || "手动")}</span>${link}
+      </label>`;
+  }).join("") || '<div class="history-empty">列表为空：点「参考文献」出推荐、搜真实文献或手动添加</div>';
+}
+
+$("write-refs-list").addEventListener("change", (e) => {
+  const cb = e.target.closest("input[data-i]");
+  if (!cb) return;
+  const i = +cb.dataset.i;
+  if (writeRefs[i]) writeRefs[i].checked = cb.checked;
+});
 
 $("write-refs-btn").addEventListener("click", async () => {
   if (!writeResult || busy) return;
@@ -600,13 +621,9 @@ $("write-refs-btn").addEventListener("click", async () => {
       else showError(d.error || ("HTTP " + r.status));
       return;
     }
-    writeRefs = d.refs || [];
-    $("write-refs-list").innerHTML = writeRefs.map((rf, i) => `
-      <label class="match write-ref-item">
-        <input type="checkbox" checked data-i="${i}" />
-        <span class="write-ref-text">[${i + 1}] ${rf.text}</span>
-        <span class="pill">${rf.source}</span>
-      </label>`).join("");
+    // 推荐重置列表；搜索/手动在其上追加
+    writeRefs = (d.refs || []).map(rf => ({ text: rf.text, source: rf.source, url: "", checked: true }));
+    _renderRefsList();
     $("write-refs").hidden = false;
   } catch (e) {
     showError(e.message || String(e));
@@ -615,11 +632,62 @@ $("write-refs-btn").addEventListener("click", async () => {
   }
 });
 
+$("write-refs-search-btn").addEventListener("click", async () => {
+  if (!writeResult || busy) return;
+  const q = $("write-refs-query").value.trim();
+  if (!q) { $("write-refs-query").focus(); showError("先填检索词"); return; }
+  $("err").hidden = true;
+  const btn = $("write-refs-search-btn");
+  const old = btn.textContent;
+  btn.disabled = true; btn.textContent = "搜索中…";
+  try {
+    const r = await fetch("/api/write-refs-search", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ topic: writeResult.topic, query: q, n: 6 }),
+    });
+    const d = await r.json();
+    if (!r.ok) {
+      if (r.status === 402) handleQuotaError(d);
+      else showError(d.error || ("HTTP " + r.status));
+      return;
+    }
+    // 去重：与已有 text 相同的跳过
+    const seen = new Set(writeRefs.map(x => x.text));
+    let added = 0;
+    (d.items || []).forEach(it => {
+      const text = `${it.title}[J]. （作者/期刊/年份请按原文补全）`;
+      if (seen.has(text)) return;
+      seen.add(text);
+      writeRefs.push({ text, source: it.source || "搜索", url: it.url || "", checked: false });
+      added++;
+    });
+    _renderRefsList();
+    $("write-refs").hidden = false;
+    if (!added) showError("搜到的都已在列表里，换个检索词试试");
+  } catch (e) {
+    showError(e.message || String(e));
+  } finally {
+    btn.disabled = false; btn.textContent = old;
+  }
+});
+
+$("write-refs-manual-btn").addEventListener("click", () => {
+  const box = $("write-refs-manual");
+  box.hidden = !box.hidden;
+  if (!box.hidden) $("write-refs-manual-text").focus();
+});
+
+$("write-refs-manual-add").addEventListener("click", () => {
+  const t = $("write-refs-manual-text").value.trim();
+  if (t.length < 8) { showError("题录太短，请粘贴完整一条（作者. 标题[J]. 期刊, 年份.）"); return; }
+  writeRefs.push({ text: t.slice(0, 200), source: "手动", url: "", checked: true });
+  $("write-refs-manual-text").value = "";
+  _renderRefsList();
+  $("write-refs").hidden = false;
+});
+
 function _selectedRefs() {
-  return [...document.querySelectorAll("#write-refs-list input:checked")]
-    .map(cb => +cb.dataset.i)
-    .filter(i => writeRefs[i])
-    .map(i => writeRefs[i]);
+  return writeRefs.filter(rf => rf.checked);
 }
 
 $("write-refs-copy").addEventListener("click", async () => {

@@ -235,8 +235,17 @@
         <button id="write-refs-btn" class="ghost mini" type="button">参考文献</button>
       </div>
       <div id="write-refs" hidden>
-        <div class="write-part-head"><span>参考文献（推荐骨架，作者/卷期请自行检索补全）</span>
+        <div class="write-part-head"><span>参考文献（勾选后插入；作者/卷期请按原文核对补全）</span>
           <button id="write-refs-copy" type="button" class="ghost mini">复制所选</button>
+        </div>
+        <div class="write-refs-search">
+          <input id="write-refs-query" type="text" placeholder="检索词，如：短视频 大学生 阅读 影响研究" maxlength="60" />
+          <button id="write-refs-search-btn" type="button" class="ghost mini">搜真实文献</button>
+          <button id="write-refs-manual-btn" type="button" class="ghost mini">手动添加</button>
+        </div>
+        <div id="write-refs-manual" class="write-refs-manual" hidden>
+          <input id="write-refs-manual-text" type="text" placeholder="粘贴题录，如：张三. 短视频对阅读习惯的影响[J]. 新闻研究, 2023." maxlength="200" />
+          <button id="write-refs-manual-add" type="button" class="primary mini">加入列表</button>
         </div>
         <div id="write-refs-list" class="matches"></div>
         <div class="actions" style="margin-top:10px">
