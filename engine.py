@@ -1021,7 +1021,10 @@ def search_references(topic: str, query: str, n: int = 6) -> list:
         raise ValueError("检索词需 2-60 个字")
     n = max(3, min(10, n))
     try:
-        from duckduckgo_search import DDGS
+        try:
+            from ddgs import DDGS  # 新包名（duckduckgo_search 已弃用且对新 API 返回空）
+        except ImportError:
+            from duckduckgo_search import DDGS
     except Exception:
         raise RuntimeError("服务器未装搜索依赖，请用「手动添加」或推荐列表")
 

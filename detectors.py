@@ -49,9 +49,12 @@ def check_plagiarism(text: str, max_checks: int = 8) -> dict:
     candidates = sorted(sents, key=lambda s: len(re.sub(r"\s+", "", s)), reverse=True)[:max_checks]
 
     try:
-        from duckduckgo_search import DDGS
+        try:
+            from ddgs import DDGS  # 新包名（duckduckgo_search 已弃用且对新 API 返回空）
+        except ImportError:
+            from duckduckgo_search import DDGS
     except Exception:
-        return {"error": "服务器未装搜索依赖（duckduckgo-search）"}
+        return {"error": "服务器未装搜索依赖（ddgs）"}
 
     matches = []
     checked = 0
