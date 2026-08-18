@@ -63,7 +63,7 @@ async def cid_middleware(request: Request, call_next):
                   "/api/write-outline", "/api/write-generate",
                   "/api/write-part", "/api/sentence-rewrite",
                   "/api/write-outlines", "/api/write-versions",
-                  "/api/write-refs-search"}
+                  "/api/write-refs-search", "/api/dual", "/api/write-unlock"}
     if request.url.path in _EXPENSIVE and request.method == "POST":
         rl = _rate_check(request)
         if rl:
@@ -619,6 +619,43 @@ async def rewrite_file(
         return _engine_err(e)
 
 
+class DualReq(BaseModel):
+    text: str = Field(...)
+    strength: str = "medium"
+    discipline: str = "auto"
+
+
+@app.post("/api/dual")
+def dual_rewrite(req: DualReq, request: Request):
+    """一键双降：先降重再降AIGC，串行管线，consume 一次。"""
+    if not engine.KEY:
+        return JSONResponse({"error": "未配置 ZHIPU_API_KEY"}, status_code=500)
+    text = req.text.strip()
+    if len(text) < 10:
+        return JSONResponse({"error": "文本太短，请至少输入 10 个字"}, status_code=400)
+    if len(text) > MAX_CHARS:
+        return JSONResponse({"error": f"文本过长（>{MAX_CHARS} 字），请分段处理"}, status_code=413)
+    err = _validate_opts(req.strength, "pipeline", req.discipline)
+    if err:
+        return JSONResponse({"error": err}, status_code=400)
+    active, _, _ = quota.is_active(request.state.cid)
+    if not active:
+        return JSONResponse(
+            {"error": "未激活或已到期，请输入兑换码（淘宝购买）。",
+             "quota": quota.get_state_summary(request.state.cid)},
+            status_code=402,
+        )
+    try:
+        data = engine.rewrite_dual(text, req.strength, req.discipline)
+        data["orig_text"] = text
+        data["sentence_scores"] = _rewrite_sentence_scores(text, data.get("rewrite", ""))
+        data["quota"] = quota.consume(request.state.cid)
+        _save_history(request, "dual", text, data)
+        return data
+    except Exception as e:
+        return _engine_err(e)
+
+
 @app.post("/api/report-parse")
 async def report_parse(request: Request, file: UploadFile = File(...)):
     """查重报告解析（免费预览）：PDF/zip → 标红句列表 + 保偏移结构（供回传）。"""
@@ -664,6 +701,11 @@ class WriteOutlineReq(BaseModel):
 
 class WriteGenReq(WriteOutlineReq):
     outline: str = Field(...)
+    preview: bool = False
+
+
+class WriteUnlockReq(BaseModel):
+    hid: str = Field(...)
 
 
 class WritePartReq(BaseModel):
@@ -674,6 +716,7 @@ class WritePartReq(BaseModel):
 
 class SentenceRewriteReq(BaseModel):
     sentence: str = Field(...)
+    action: str = "rewrite"
 
 
 class WriteRefsReq(BaseModel):
@@ -810,6 +853,21 @@ def write_generate(req: WriteGenReq, request: Request):
     try:
         data = engine.generate_article(req.topic.strip(), req.kind, req.words,
                                        req.discipline, req.notes, req.outline)
+        if req.preview:
+            # 免费预览：完整版先存 history（待解锁快照），响应只带截断视图
+            import copy
+            full_snapshot = copy.deepcopy(data)
+            hid = history.add(request.state.cid, "write", req.topic.strip(), full_snapshot)
+            # 就地截断为预览视图
+            for sec in data["sections"]:
+                full_len = len(sec["text"])
+                sec["text"] = engine._preview_section(sec["text"])
+                sec["truncated"] = full_len > 80
+            data["full_text"] = ""
+            data["preview"] = True
+            data["hid"] = hid
+            data["quota"] = quota.get_state_summary(request.state.cid)  # 不扣次
+            return data
         data["quota"] = quota.consume(request.state.cid)
         _save_history(request, "write", req.topic.strip(), data)
         return data
@@ -817,6 +875,27 @@ def write_generate(req: WriteGenReq, request: Request):
         return JSONResponse({"error": str(e)}, status_code=400)
     except Exception as e:
         return _engine_err(e)
+
+
+@app.post("/api/write-unlock")
+def write_unlock(req: WriteUnlockReq, request: Request):
+    """解锁预览全文：按 hid 从 history 取回完整快照（不重生成，文本与预览一致），扣 1 次。"""
+    rec = history.get(request.state.cid, req.hid)
+    if not rec or rec.get("task") != "write":
+        return JSONResponse({"error": "预览记录不存在或已过期，请重新生成"}, status_code=404)
+    result = rec.get("result") or {}
+    if not result.get("full_text"):
+        return JSONResponse({"error": "该记录没有可解锁的全文"}, status_code=400)
+    active, _, _ = quota.is_active(request.state.cid)
+    if not active:
+        return JSONResponse(
+            {"error": "未激活或已到期，请输入兑换码（淘宝购买）。",
+             "quota": quota.get_state_summary(request.state.cid)},
+            status_code=402,
+        )
+    result.pop("preview", None)
+    result["quota"] = quota.consume(request.state.cid)
+    return result
 
 
 @app.post("/api/write-part")
@@ -856,6 +935,8 @@ def sentence_rewrite(req: SentenceRewriteReq, request: Request):
     s = (req.sentence or "").strip()
     if not (6 <= len(s) <= 500):
         return JSONResponse({"error": "句子长度需在 6-500 字之间"}, status_code=400)
+    if req.action not in engine.SENT_ACTIONS:
+        return JSONResponse({"error": "action 非法"}, status_code=400)
     active, _, _ = quota.is_active(request.state.cid)
     if not active:
         return JSONResponse(
@@ -864,7 +945,7 @@ def sentence_rewrite(req: SentenceRewriteReq, request: Request):
             status_code=402,
         )
     try:
-        cands = engine.rewrite_sentence_candidates(s)
+        cands = engine.rewrite_sentence_candidates(s, action=req.action)
         return {"ok": True, "sentence": s, "candidates": cands,
                 "quota": quota.consume(request.state.cid)}
     except ValueError as e:
@@ -1061,6 +1142,7 @@ _REPORT_NAMES = {
     "plagiarism": "查重报告",
     "report": "报告降重报告",
     "write": "AI写作报告",
+    "dual": "双降报告",
 }
 
 

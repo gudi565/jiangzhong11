@@ -510,3 +510,16 @@ textarea#write-outline:focus { border-color: var(--accent); box-shadow: 0 0 0 3p
   background: rgba(10,33,24,.55); border: 1px solid var(--glass-border, rgba(255,255,255,.12));
   border-radius: 8px; outline: none; color: var(--ink, var(--text)); }
 .write-ref-link { font-size: 12px; color: var(--accent); white-space: nowrap; }
+
+/* ── 双降开关 + 写作预览解锁 ─────────────────────────────────── */
+#dual-toggle-wrap b { color: var(--accent); }
+#dual-toggle-wrap { border: 1px solid rgba(91,240,176,.35); border-radius: 10px; padding: 8px 12px; margin-top: 6px; }
+.write-unlock-bar { display: flex; flex-direction: column; gap: 10px; align-items: flex-start;
+  background: rgba(91,240,176,.07); border: 1px dashed var(--accent); border-radius: 12px;
+  padding: 14px 16px; margin: 10px 0 4px; }
+.write-unlock-bar .note { margin: 0; }
+.sent-pop-actions { display: flex; gap: 6px; margin-bottom: 8px; }
+.sent-pop-action { font-size: 12px; padding: 4px 12px; border-radius: 999px;
+  background: rgba(255,255,255,.05); border: 1px solid var(--glass-border, rgba(255,255,255,.12));
+  color: var(--muted, #8fb3a6); cursor: pointer; }
+.sent-pop-action.active { background: rgba(91,240,176,.15); border-color: var(--accent); color: var(--accent); }

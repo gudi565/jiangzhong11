@@ -224,7 +224,7 @@ def build_report(task: str, orig_text: str, result: dict) -> bytes:
 
 
 def _report_rewrite(doc, orig_text, result, title, right_hint):
-    """降重 / 降AIGC / 英文修改 共用：双栏对照 + 指标 + 诊断。"""
+    """降重 / 降AIGC / 英文修改 / 双降 共用：双栏对照 + 指标 + 诊断。"""
     _brand_header(doc, title, f"强度 {result.get('strength', '—')} · 模式 {result.get('mode', '—')}")
     rw = result.get("rewrite", "")
     sim = result.get("similarity")
@@ -234,6 +234,8 @@ def _report_rewrite(doc, orig_text, result, title, right_hint):
         ("相似度", f"{round(sim*100)}%" if isinstance(sim, (int, float)) else "—"),
         ("差异度", f"{round(cov*100)}%" if isinstance(cov, (int, float)) else "—"),
     ]
+    if isinstance(result.get("humanize_shift"), (int, float)):
+        pairs.append(("AI味打散", f"{round(result['humanize_shift']*100)}%"))
     if result.get("discipline"):
         pairs.append(("学科", result["discipline"]))
     if result.get("chunks") is not None:
@@ -429,10 +431,16 @@ def _report_write(doc, orig_text, result):
                      "不得未经核对直接提交或发布。")
 
 
+def _report_dual(doc, orig_text, result):
+    """双降报告：复用双栏对照布局，指标行加 AI味打散幅度。"""
+    _report_rewrite(doc, orig_text, result, "双降报告", "红=与原文仍高度相似")
+
+
 _build_dispatch = {
     "rewrite": lambda d, o, r: _report_rewrite(d, o, r, "降重报告", "红=改得不够"),
     "humanize": lambda d, o, r: _report_rewrite(d, o, r, "降AIGC报告", "红=AI痕迹仍重"),
     "english": lambda d, o, r: _report_rewrite(d, o, r, "英文修改报告", "红=改动过小"),
+    "dual": _report_dual,
     "aigc": _report_aigc,
     "plagiarism": _report_plagiarism,
     "report": _report_report,

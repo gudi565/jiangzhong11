@@ -34,7 +34,7 @@ $("english-mode").addEventListener("click", (e) => {
 
 let task = "rewrite";
 let busy = false;
-const TASK_LABELS = { rewrite: "改写", humanize: "降 AIGC", english: "英文修改", aigc: "查 AIGC 率", plagiarism: "查重", report: "报告降重", write: "AI 写作", history: "历史" };
+const TASK_LABELS = { rewrite: "改写", humanize: "降 AIGC", english: "英文修改", aigc: "查 AIGC 率", plagiarism: "查重", report: "报告降重", write: "AI 写作", dual: "双降", history: "历史" };
 document.querySelector(".tabs").addEventListener("click", (e) => {
   const t = e.target.closest(".tab");
   if (!t || t.disabled) return;
@@ -46,6 +46,7 @@ document.querySelector(".tabs").addEventListener("click", (e) => {
   const isCheck = task === "aigc" || task === "plagiarism";
   const isPanelTask = task === "report" || task === "history" || task === "write";
   document.querySelector(".pipe-toggle").style.display = isRewrite ? "" : "none";
+  document.getElementById("dual-toggle-wrap").style.display = isRewrite ? "" : "none";
   document.querySelector(".field").style.display = isRewrite ? "" : "none";
   document.getElementById("strength").style.display = isCheck ? "none" : "";
   document.getElementById("upload").style.display = isCheck ? "none" : "";
@@ -88,7 +89,7 @@ let lastReport = null;
 const REPORT_NAMES = {
   rewrite: "降重报告.docx", humanize: "降AIGC报告.docx", english: "英文修改报告.docx",
   aigc: "AIGC检测报告.docx", plagiarism: "查重报告.docx", report: "报告降重报告.docx",
-  write: "AI写作报告.docx",
+  write: "AI写作报告.docx", dual: "双降报告.docx",
 };
 
 async function downloadReportPayload(payload, btn) {
@@ -293,11 +294,14 @@ function renderDiag(data) {
 
 function showResult(data, origText, taskOverride) {
   currentOutput = data.rewrite;
-  lastReport = { task: taskOverride || task, orig_text: origText, result: data };
+  const effTask = taskOverride || (data.mode === "dual" ? "dual" : task);
+  lastReport = { task: effTask, orig_text: origText, result: data };
   document.querySelector(".metrics").style.display = (data.mode === "english" && data.sub === "translate") ? "none" : "";
   $("m-cov").textContent = Math.round(data.coverage * 100) + "%";
   $("m-sim").textContent = Math.round(data.similarity * 100) + "%";
-  $("m-len").textContent = origText.length + " → " + data.rewrite.length;
+  $("m-len").textContent = typeof data.humanize_shift === "number"
+    ? `${origText.length} → ${data.rewrite.length}（AI味打散 ${Math.round(data.humanize_shift * 100)}%）`
+    : origText.length + " → " + data.rewrite.length;
   $("result").hidden = false;
   renderText($("orig"), origText);
   renderText($("out"), data.rewrite, origText);
@@ -504,9 +508,10 @@ $("write-go").addEventListener("click", async () => {
   busy = true; document.querySelector('.tabs').classList.add('locked');
   const slowTimer = setTimeout(() => { btn.textContent = "生成中…AI 偶尔会慢，马上好"; }, 15000);
   try {
+    // 默认免费预览（每节首段），满意后解锁全文扣 1 次
     const r = await fetch("/api/write-generate", {
       method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ ...writeFormPayload(), outline }),
+      body: JSON.stringify({ ...writeFormPayload(), outline, preview: true }),
     });
     const data = await r.json();
     if (!r.ok) {
@@ -525,12 +530,47 @@ $("write-go").addEventListener("click", async () => {
   }
 });
 
+$("write-unlock-btn").addEventListener("click", async () => {
+  if (!writeResult || !writeResult.hid || busy) return;
+  $("err").hidden = true;
+  const btn = $("write-unlock-btn");
+  const old = btn.textContent;
+  btn.disabled = true; btn.textContent = "解锁中…";
+  busy = true; document.querySelector('.tabs').classList.add('locked');
+  try {
+    const r = await fetch("/api/write-unlock", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ hid: writeResult.hid }),
+    });
+    const data = await r.json();
+    if (!r.ok) {
+      if (r.status === 402) handleQuotaError(data);
+      else showError(data.error || ("HTTP " + r.status));
+      return;
+    }
+    writeResult = data;
+    showWriteResult(data);
+  } catch (e) {
+    showError(e.message || String(e));
+  } finally {
+    busy = false; document.querySelector('.tabs').classList.remove('locked');
+    btn.disabled = false; btn.textContent = old;
+  }
+});
+
 function showWriteResult(data) {
   writeResult = data;
   currentOutput = data.full_text || "";
+  const isPreview = !!data.preview;
   lastReport = { task: "write", orig_text: data.topic || "", result: data };
   $("write-title").textContent = data.topic || "";
   _rerenderWriteSections();
+  $("write-unlock-bar").hidden = !isPreview;
+  $("write-result-actions").hidden = isPreview;   // 预览态藏复制/下载/降AI
+  if (isPreview) {
+    $("write-preview-hint").textContent =
+      `免费预览：以上为每节开头（全文约 ${data.actual_words} 字 / ${data.sections_count} 节）。满意再解锁，解锁后可复制、下载、改写。`;
+  }
   $("write-refs").hidden = true;
   $("write-refs-list").innerHTML = "";
   writeRefs = [];
@@ -819,6 +859,7 @@ async function restoreWriteVersion(id) {
 // ── 句级改写 popover：点句子 → 多候选 → 换一换/应用 ────────────────────────
 const sentPop = { el: null, span: null, loading: false };
 let sentReqSeq = 0;  // 请求令牌：换句/关弹层后让在飞响应作废，防迟到覆盖串句
+let sentAction = "rewrite";  // rewrite | expand | shorten
 
 function closeSentPop() { sentReqSeq++; $("sent-pop").hidden = true; sentPop.span = null; }
 
@@ -861,7 +902,7 @@ async function _loadCandidates(sentence) {
   try {
     const r = await fetch("/api/sentence-rewrite", {
       method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ sentence }),
+      body: JSON.stringify({ sentence, action: sentAction }),
     });
     const d = await r.json();
     if (my !== sentReqSeq) return;  // 迟到响应：用户已换句/关弹层，丢弃
@@ -1184,6 +1225,9 @@ $("go").addEventListener("click", async () => {
     endpoint = "/api/aigc-check"; payload = { text }; isCheck = true;
   } else if (task === "plagiarism") {
     endpoint = "/api/plagiarism-check"; payload = { text }; isCheck = true;
+  } else if ($("dual") && $("dual").checked) {
+    endpoint = "/api/dual";
+    payload = { text, strength, discipline: $("discipline").value };
   } else {
     endpoint = "/api/rewrite";
     payload = { text, strength, mode: $("pipe").checked ? "pipeline" : "simple", discipline: $("discipline").value };

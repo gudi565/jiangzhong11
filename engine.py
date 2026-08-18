@@ -749,9 +749,23 @@ def _write_section(topic: str, kind: str, discipline: str, notes: str,
     ], temperature=0.7)
 
 
+def _preview_section(text: str, head_chars: int = 80) -> str:
+    """预览截断：保留首 head_chars 字（按句边界收口），尾部标记截断。"""
+    t = (text or "").strip()
+    if len(t) <= head_chars:
+        return t
+    cut = t[:head_chars]
+    # 收到最近句读，避免半句
+    for i in range(len(cut) - 1, max(30, len(cut) - 40), -1):
+        if cut[i] in "。！？；":
+            return cut[:i + 1] + "……"
+    return cut + "……"
+
+
 def generate_article(topic: str, kind: str, words: int, discipline: str,
-                     notes: str, outline_text: str) -> dict:
-    """逐节并发生成全文。任一节失败整单失败（不产出半篇）。"""
+                     notes: str, outline_text: str, preview_only: bool = False) -> dict:
+    """逐节并发生成全文。任一节失败整单失败（不产出半篇）。
+    preview_only=True 时返回预览态（每章首段截断+全文不给），供免费预览后解锁。"""
     sections = parse_outline(outline_text)
     n = len(sections)
     min_sections = -(-words // (WRITE_SECTION_CAP + 200))  # ceil
@@ -774,7 +788,7 @@ def generate_article(topic: str, kind: str, words: int, discipline: str,
         cleaned.append(t)
 
     full_text = "\n\n".join(cleaned)
-    return {
+    result = {
         "task": "write",
         "topic": topic,
         "kind": kind,
@@ -790,6 +804,17 @@ def generate_article(topic: str, kind: str, words: int, discipline: str,
         "full_text": full_text,
         "note": WRITE_NOTE,
     }
+    if preview_only:
+        # 预览态：每节截断为首段、全文不下发；全文以 write 快照存 history（服务端），
+        # 解锁端点按 hid 从 history 取回完整版——不重生成，文本与预览完全一致
+        result["sections"] = [{"title": s["title"],
+                               "text": _preview_section(cleaned[i]),
+                               "words": len(re.sub(r"\s", "", cleaned[i])),
+                               "truncated": len(cleaned[i]) > 80}
+                              for i, s in enumerate(sections)]
+        result["full_text"] = ""
+        result["preview"] = True
+    return result
 
 
 # ── 写作辅助件：摘要/致谢生成 + 句级多候选改写 ─────────────────────────────
@@ -838,30 +863,51 @@ SENT_CAND_SYS = (
     "专有名词；不增删信息。只输出一个 JSON 数组，元素为改写后的句子字符串，禁止 markdown、禁止解释。"
 )
 
+SENT_ACTIONS = {
+    "rewrite": ("改写", "给出 {n} 个改写版本：\n{s}"),
+    "expand": ("扩写", ("把下面这个句子扩写成更充实的 1-2 句（补充自然的细节、背景或解释，不编造具体数据/人名，"
+                    "总长为原句的 1.8-2.5 倍）。给出 {n} 个不同版本：\n{s}")),
+    "shorten": ("精简", ("把下面这个句子压缩精简为一句，保留全部核心信息、数据与引用标记，去掉冗余修饰。"
+                     "给出 {n} 个不同版本：\n{s}")),
+}
+
 SENT_CAND_N = 3
 
 
-def rewrite_sentence_candidates(sentence: str, n: int = SENT_CAND_N) -> list:
-    """句级多候选改写（编辑器行内交互用）。返回 [{new, sim}]，按与原句差异度降序。"""
+def rewrite_sentence_candidates(sentence: str, n: int = SENT_CAND_N, action: str = "rewrite") -> list:
+    """句级多候选改写/扩写/精简（编辑器行内交互用）。返回 [{new, sim}]。"""
     s = (sentence or "").strip()
     if len(s) < 6:
-        raise ValueError("句子太短，无需改写")
+        raise ValueError("句子太短，无需处理")
     if len(s) > 500:
-        raise ValueError("句子过长，请在段落级改写")
+        raise ValueError("句子过长，请在段落级处理")
+    if action not in SENT_ACTIONS:
+        raise ValueError("action 非法")
+    instr = SENT_ACTIONS[action][1].format(n=n, s=s)
+    sys_prompt = SENT_CAND_SYS if action == "rewrite" else (
+        "你是中文编辑。只输出一个 JSON 数组，元素为字符串，禁止 markdown、禁止解释。"
+        "铁律：保留原意、数据、引用标记、术语；不编造。")
     raw = chat([
-        {"role": "system", "content": SENT_CAND_SYS},
-        {"role": "user", "content": f"给出 {n} 个改写版本：\n{s}"},
+        {"role": "system", "content": sys_prompt},
+        {"role": "user", "content": instr},
     ], temperature=0.9)
     txt = raw.strip()
     if txt.startswith("```"):
         txt = re.sub(r"^```[a-zA-Z]*\n?", "", txt)
         txt = re.sub(r"\n?```$", "", txt)
     m = re.search(r"\[.*\]", txt, flags=re.S)
-    if not m:
-        raise RuntimeError("改写候选解析失败，请重试")
-    try:
-        arr = json.loads(m.group(0))
-    except Exception:
+    arr = None
+    if m:
+        try:
+            arr = json.loads(m.group(0))
+        except Exception:
+            arr = None
+    if not arr:
+        # 兜底：GLM 偶尔无视 JSON 指令、输出编号/换行列表——按行剥号收集
+        lines = [re.sub(r"^\s*(?:\d{1,2}|[①②③④⑤])[、.．)）]\s*", "", ln).strip()
+                 for ln in txt.splitlines()]
+        arr = [ln for ln in lines if len(ln) >= 6]
+    if not arr:
         raise RuntimeError("改写候选解析失败，请重试")
     seen, out = set(), []
     for item in arr:
@@ -1066,3 +1112,37 @@ def search_references(topic: str, query: str, n: int = 6) -> list:
     if not out:
         raise RuntimeError("没搜到相关文献线索，换个检索词试试")
     return out
+
+
+# ── 一键双降：降重 + 降AIGC 串行组合（对标墨得问题双降开关）────────────────
+def rewrite_dual(text: str, strength: str = "medium", discipline: str = "auto") -> dict:
+    """先降重（字面查重）再降AIGC（去AI味）的串行管线。
+    第一遍 rewrite_pipeline 出低相似度文本；第二遍 rewrite_humanize 在其上打散模板感。
+    返回含双指标：相似度（对原稿）+ AI味降幅（人化前后对比）。"""
+    import re as _re
+    orig = text
+    # 第一遍：降重（走管线，保引用保数据）
+    r1 = rewrite_pipeline(orig, strength, discipline)
+    mid = r1["rewrite"]
+    # 第二遍：降AIGC（人化改写，打散句式模板）
+    r2 = rewrite_humanize(mid, strength)
+    final = r2["rewrite"]
+    sim_orig = similarity(orig, final)
+    # AI 味降幅：人化前后的中文字符 bigram 相似度越低=改得越狠
+    sim_mid = similarity(mid, final)
+    return {
+        "task": "dual",
+        "rewrite": final,
+        "mid_text": mid,               # 第一遍（仅降重）结果，供报告对照
+        "similarity": round(sim_orig, 3),          # 最终 vs 原稿
+        "coverage": round(1 - sim_orig, 3),
+        "humanize_shift": round(1 - sim_mid, 3),   # 第二遍人化幅度（AI味打散程度）
+        "chunks": r1.get("chunks"),
+        "strength": strength,
+        "discipline": discipline,
+        "mode": "dual",
+        "stages": ["rewrite", "humanize"],
+        "diagnostics": r1.get("diagnostics", []),
+        "note": "双降完成：第一遍降低字面相似度（保引用/数据），第二遍打散 AI 句式模板。"
+                "两项均为估算，最终以官方检测为准。",
+    }

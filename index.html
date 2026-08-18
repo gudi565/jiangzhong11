@@ -76,6 +76,11 @@
     <span>质量管线：分类 → 针对性重写 → 校验 → 重试 → 修复</span>
   </label>
 
+  <label class="pipe-toggle" id="dual-toggle-wrap">
+    <input type="checkbox" id="dual" />
+    <span><b>一键双降</b>：先降重再降AIGC，同时压字面重复和AI率（耗时约 2 倍）</span>
+  </label>
+
   <div class="controls">
     <div class="selectors">
       <div class="segmented" id="strength">
@@ -220,7 +225,11 @@
     <div id="write-result" hidden>
       <div class="report-stats" id="write-stats"></div>
       <h3 id="write-title" class="write-article-title"></h3>
-      <div class="actions write-result-actions">
+      <div id="write-unlock-bar" class="write-unlock-bar" hidden>
+        <p id="write-preview-hint" class="note"></p>
+        <button id="write-unlock-btn" type="button" class="primary">解锁全文（消耗 1 次）</button>
+      </div>
+      <div class="actions write-result-actions" id="write-result-actions">
         <button id="write-copy" type="button" class="ghost mini">复制全文</button>
         <button id="write-dl-docx" type="button" class="ghost mini">下载 Word</button>
         <button id="write-humanize" type="button" class="primary mini">一键降AI（消耗 1 次）</button>
@@ -320,11 +329,16 @@
 
 <div id="sent-pop" class="sent-pop" hidden>
   <div class="sent-pop-head">
-    <span>改写候选</span>
+    <span id="sent-pop-title">改写候选</span>
     <span>
       <button id="sent-pop-refresh" type="button" class="ghost mini">换一换</button>
       <button id="sent-pop-close" type="button" class="ghost mini" aria-label="关闭">×</button>
     </span>
+  </div>
+  <div class="sent-pop-actions">
+    <button class="sent-pop-action mini active" data-action="rewrite" type="button">改写</button>
+    <button class="sent-pop-action mini" data-action="expand" type="button">扩写</button>
+    <button class="sent-pop-action mini" data-action="shorten" type="button">精简</button>
   </div>
   <div id="sent-pop-list"></div>
 </div>
